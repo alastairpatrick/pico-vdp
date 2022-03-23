@@ -1,0 +1,17 @@
+VGA 15 pin connector
+1 red video - 2.2K to GPIO9, 1K to GPIO10, to 470ohm to GPIO11
+2 green video - 2.2K to GPIO6, 1K to GPIO7, 470ohm to GPIO8
+3 blue video - 1K to GPIO4, 470ohm to GPIO5
+4 NC
+5 GND
+6 GND
+7 GND
+8 GND
+9 NC
+10 GND
+11 NC
+12 NC
+13 HSYNC - 100ohm to GPIO3
+14 VSYNC - 100ohm to GPIO2
+
+GPIO1 and GPIO are reserved for UART. GPIO12+ are intended for Z80 bus and possibly audio.

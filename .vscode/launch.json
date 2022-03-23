@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Cortex Debug",
+            "cwd": "${workspaceRoot}",
+            "executable": "${workspaceRoot}/build/pico-vdp.elf",
+            "request": "launch",
+            "type": "cortex-debug",
+            "servertype": "openocd",
+            "device": "Pico2040",
+            "runToMain": true,
+            "configFiles": ["interface/picoprobe.cfg", "target/rp2040.cfg"],
+            "searchDir": ["${env:PICO_SDK_PATH}/openocd/tcl"],
+            "svdFile": "${env:PICO_SDK_PATH}/src/rp2040/hardware_regs/rp2040.svd",
+        }
+    ]
+}
