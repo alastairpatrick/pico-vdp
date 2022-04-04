@@ -15,7 +15,10 @@ add_executable(pico-vdp
   video.c
 )
 
-pico_generate_pio_header(pico-vdp ${CMAKE_CURRENT_LIST_DIR}/video.pio)
+pico_generate_pio_header(pico-vdp
+  ${CMAKE_CURRENT_LIST_DIR}/sys80.pio
+  ${CMAKE_CURRENT_LIST_DIR}/video.pio
+)
 
 pico_enable_stdio_usb(pico-vdp 1)
 pico_enable_stdio_uart(pico-vdp 1)
