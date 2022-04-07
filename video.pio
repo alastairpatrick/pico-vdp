@@ -1,23 +1,23 @@
-.program video
-.side_set 2 opt
-.origin 0
-.define pixel_cycles 2
+.PROGRAM video
+.SIDE_SET 2 OPT
+.ORIGIN 0
+.DEFINE pixel_cycles 2
 
-public handle_display:
-  out pins, 8
-  jmp x-- handle_display
+PUBLIC handle_display:
+  OUT PINS, 8
+  JMP X-- handle_display
 
-  mov pins, null
-  jmp entry
+  MOV PINS, NULL
+  JMP entry
 
-public handle_non_display:
-  mov pins, null
-  jmp x-- handle_non_display
+PUBLIC handle_non_display:
+  MOV PINS, NULL
+  JMP X-- handle_non_display
 
-public entry:
-  out x, 12       // 0
-  out exec, 16    // 1 & 2, sync state change on 2
-  out pc, 4       // 3 
+PUBLIC entry:
+  OUT X, 11       // 0
+  OUT EXEC, 16    // 1 & 2, sync state change on 2
+  OUT PC, 5       // 3 
   
 % c-sdk {
 static inline void video_program_init(PIO pio, uint sm, uint offset, uint rgb_pins, uint sync_pins, int pio_clk_div) {

@@ -20,8 +20,8 @@ static const uint LED_PIN = 25;
 static const uint VSYNC_PIN = 2;
 static const uint HSYNC_PIN = 3;
 static const uint BLUE_BASE = 4;     // 4-5
-static const uint GREEN_BASE = 6;    // 6-8
-static const uint RED_BASE = 9;      // 9-11
+static const uint RED_BASE = 6;    // 6-8
+static const uint GREEN_BASE = 9;      // 9-11
 
 typedef struct {
   int32_t transfer_count;
@@ -79,7 +79,7 @@ static uint32_t MakeCmd(int run_pixels, bool hsync, bool vsync, bool raise_irq, 
   }
   int pio_instruction = raise_irq ? pio_encode_irq_set(false, 0) : pio_encode_nop();
   pio_instruction |= pio_encode_sideset_opt(2, sync_state);
-  return (run_pixels-1) | (pio_instruction << 12) | (handler << 28);
+  return (run_pixels-1) | (pio_instruction << 11) | (handler << 27);
 }
 
 static void InitControlBlocks(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions) {

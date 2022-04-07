@@ -1,140 +1,143 @@
-.define gpio_rd 12
-.define gpio_wr 13
+  .PROGRAM sys80
+  .SIDE_SET 3 OPT PINDIRS
   
-  
-.program read_vdp
-.side_set 3 opt pindirs
-
-	; WAIT
-	; D0	<- SET first
+	; A0      <- IN first
+	; A1
+	; D0      <- SET first
 	; D1
 	; D2
 	; D3
 	; D4
-	; D5
+	; D5      <- SIDE first
 	; D6
-	; D7	<- SET last
-	; A0
-	; A1	<- JMP PIN
-	
-	; The value read from this port is stored in the PIO's OSR register so can
-	; be read without blocking or wait states. CPU updates the value by causing
-	; the PIO to execute a PULL instruction after pushing the new value into the
-	; TX FIFO.
-	
-	; 6 instructions
+	; D7      <- SET last
+  ; /CS
+  ; /RD     <- JMP PIN
 
-do_read:
-	mov pins, osr
-  set pindirs, 0b11111    side 0b111
-	
-public read_vdp_entry:
-  .wrap_target
-	wait 1 gpio gpio_rd
-  set pindirs, 0b00000    side 0b000
-	wait 0 gpio gpio_rd
-	jmp pin do_read
-	.wrap
-	
-	
+  ; relative to IN pin mapping
+  .DEFINE PUBLIC d0_pin 2
+  .DEFINE PUBLIC cs_pin 10
+  .DEFINE PUBLIC rd_pin 11
 
+finish_read:
+  SET PINDIRS, 0b11111  SIDE 0b111
 
-.program write_vdp
-	
-	; WAIT
-	; D0	<- IN first
-	; D1
-	; D2
-	; D3
-	; D4
-	; D5
-	; D6
-	; D7	<- IN last
-	; A0
-	; A1	<- JMP PIN
-	
-	; 4 instructions
-	
-do_write:
-	; This could in theory block if the RX FIFO filled up. However, there is
-	; a DMA channel dedicated to copying data from the RX FIFO into a ring buffer
-	; in internal RAM. This is fast enough to ensure that this never blocks.
-	; Wait states are not required.
-	in pins, 8
-	
-public write_vdp_entry:
-  .wrap_target
-	wait 1 gpio gpio_rd
-	wait 0 gpio gpio_wr
-	jmp pin do_write
-	.wrap
-
-
-
-
-.program read_ay
-.side_set 4 opt pindirs
-	
-	; WAIT	<- OUT, SET first
-	; D0
-	; D1
-	; D2
-	; D3
-	; D4 <- SIDE first
-	; D5
-	; D6
-	; D7	<- OUT last
-	; A0	<- IN first, last
-	; A1	<- JMP PIN
-	
-	; 8 instructions
-
-
-public read_ay_entry:
+PUBLIC entry:  
 loop:
-  .wrap_target	
-	wait 1 gpio gpio_rd
-	set pindirs, 0b10000 side 0b0000   ; make only WAIT an output
-	wait 0 gpio gpio_rd
-	jmp pin loop
-	
-do_read:
-  set pins, 1                         ; assert WAIT
-	set pindirs, 0b11111	side 0b1111   ; make WAIT and D0-7 outputs
-	in pins, 1			      		          ; write address to FIFO.
-	out pins, 9				                  ; read data from FIFO, blocking with WAIT asserted. deassert WAIT. 
-	.wrap
-	
+  WAIT 1 PIN cs_pin
+  SET PINDIRS, 0b00000  SIDE 0b000
+
+  WAIT 0 PIN cs_pin
+  MOV OSR, PINS
+  OUT X, d0_pin
+  JMP X!=Y loop                   ; only SM that handles whis port continues beyond here
+
+  ; Jump to one of the handle_X routines, depending on SM configuration
+  .WRAP
+
+  // PIO 1 SM 0 handles both reads and writes to port #0 - the GI address port.
+  // ISR holds the current address.
+  // Writes to this port are pushed twice to the RX FIFO, updating the
+  // low 8-bits of the READ_ADDR and WRITE_ADDR of the DMA channels attached to SM1 and SM2.
+
+  ; .WRAP_TARGET for SM 0
+PUBLIC handle_access0:
+  JMP PIN write0
+
+read0:
+  MOV PINS, ISR
+  JMP finish_read
+
+write0:
+  IN OSR, 8                       ; auto-push register address
+  PUSH                            ; push register address second time, leaving address in ISR
+  JMP loop
 
 
-	
-.program write_ay
-		
-	; WAIT	<- SET first, last
-	; D0	<- IN first
-	; D1
-	; D2
-	; D3
-	; D4
-	; D5
-	; D6
-	; D7
-	; A0	<- IN last
-	; A1	<- JMP PIN
-	
-	; 6 instructions
-	
-  ; TODO: implement ARM ISR, calculate maximum interrupt latency and determine whether wait states are necessary.
+  // PIO 1 SM 1 handles reads to port #1 - the GI data port.
 
-public write_ay_entry:
-loop:
-  .wrap_target
-	wait 1 gpio gpio_wr
-	wait 0 gpio gpio_wr
-	jmp pin loop
+  ; .WRAP_TARGET for SM 1
+PUBLIC handle_read1:
+  JMP PIN loop                    ; ignore writes to port #1
 
-do_write:
-  set pins, 1                         ; assert WAIT
-	in pins, 9			                    ; potentially blocks with /WAIT asserted.
-  set pins, 0                         ; deassert WAIT
-  .wrap
+  PUSH                            ; push dummy value to chain to the DMA channel that will load the register
+  PULL                            ; pull register value
+  MOV PINS, OSR
+  JMP finish_read
+
+  // PIO 1 SM 2 handles writes to port #1 - the GI data port.
+
+  ; .WRAP_TARGET for SM 2
+PUBLIC handle_write1:
+  JMP PIN write1                  ; only handle writes to port #1
+  JMP loop
+
+write1:                           ; TODO: same as write0
+  IN OSR, 8                       ; push dummy value to chain to the DMA channel that will store the register
+  PUSH                            ; auto-push register data
+  JMP loop
+
+  // PIO 1 SM 3 handlers accesses to port #2 - the VDP port
+
+PUBLIC handle_access2:
+  JMP PIN write2
+
+read2:                            ; TODO: same as read0
+  MOV PINS, ISR
+  JMP finish_read
+
+write2:
+  MOV ISR, ~ISR
+  IN OSR, 8                      ; Auto-push every 16-bits
+  JMP loop
+
+
+% c-sdk {
+static inline void sys80_program_init(PIO pio, uint sm, uint offset, uint pins, int pio_clk_div) {
+  const static uint g_sm_handlers[4] = {
+    sys80_offset_handle_access0,
+    sys80_offset_handle_read1,
+    sys80_offset_handle_write1,
+    sys80_offset_handle_access2,
+  };
+
+  const static uint g_sm_ports[4] = {
+    0,
+    1,
+    1,
+    2
+  };
+
+  const static uint g_sm_auto_push[4] = {
+    8,
+    8,
+    8,
+    16
+  };
+
+	pio_sm_config c = sys80_program_get_default_config(offset);
+
+  sm_config_set_in_pins(&c, pins);
+  sm_config_set_set_pins(&c, pins + sys80_d0_pin, 8);
+  sm_config_set_sideset_pins(&c, pins + sys80_d0_pin + 5);
+  sm_config_set_jmp_pin(&c, pins + sys80_rd_pin);
+
+  sm_config_set_wrap(&c, offset + g_sm_handlers[sm], offset + sys80_wrap);
+
+  sm_config_set_in_shift(&c, false /*left shift*/, true /*auto-push*/, g_sm_auto_push[sm]);
+  sm_config_set_out_shift(&c, true /*right shift*/, false /*auto-pull*/, 32);
+
+  pio_sm_init(pio, sm, sys80_offset_entry, &c);
+
+  // Configure the data pins so they can be controlled via PINDIRS but currently still inputs.
+  for (int i = 0; i < 8; ++i) {
+     pio_gpio_init(pio, pins + sys80_d0_pin + i);
+  }
+  pio_sm_set_consecutive_pindirs(pio, sm, pins + sys80_d0_pin, 8, false /*pindir*/ );
+
+  pio_sm_exec(pio, sm, pio_encode_set(pio_isr, 0));
+  pio_sm_exec(pio, sm, pio_encode_set(pio_y, g_sm_ports[sm]));
+
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}
