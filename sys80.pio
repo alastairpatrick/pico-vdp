@@ -1,143 +1,187 @@
-  .PROGRAM sys80
-  .SIDE_SET 3 OPT PINDIRS
-  
-	; A0      <- IN first
-	; A1
-	; D0      <- SET first
+  ; D0      <- IN, OUT, SET first
 	; D1
 	; D2
 	; D3
 	; D4
 	; D5      <- SIDE first
 	; D6
-	; D7      <- SET last
-  ; /CS
+	; D7      <- OUT, SET last
   ; /RD     <- JMP PIN
 
-  ; relative to IN pin mapping
-  .DEFINE PUBLIC d0_pin 2
-  .DEFINE PUBLIC cs_pin 10
-  .DEFINE PUBLIC rd_pin 11
 
-finish_read:
-  SET PINDIRS, 0b11111  SIDE 0b111
+; 11 instructions
+; SM 0
+; Port #0 (read/write) holds the selected register address. For easy retreaval on read
+; requests, it is stored in the ISR. It is also stored in the low 8-bits of the READ_ADDR
+; and WRITE_ADDR of a pair of DMA channels so that subsequent requests to port #1 will
+; access the appropriate byte of internal SRAM.
+.PROGRAM sys80_port0
+.SIDE_SET 3 OPT PINDIRS
+.DEFINE PUBLIC cs_pin 26
+
+write:
+  MOV X, PINS
+  IN Y, 24
+  IN X, 8                           ; auto-push to READ_ADDR
+  IN Y, 24
+  IN X, 8                           ; auto-push to WRITE_ADDR
 
 PUBLIC entry:  
-loop:
-  WAIT 1 PIN cs_pin
+.WRAP_TARGET
+  WAIT 1 GPIO cs_pin
   SET PINDIRS, 0b00000  SIDE 0b000
+  WAIT 0 GPIO cs_pin
+  JMP PIN write
 
-  WAIT 0 PIN cs_pin
-  MOV OSR, PINS
-  OUT X, d0_pin
-  JMP X!=Y loop                   ; only SM that handles whis port continues beyond here
-
-  ; Jump to one of the handle_X routines, depending on SM configuration
+read:
+  MOV PINS, X
+  SET PINDIRS, 0b11111  SIDE 0b111
   .WRAP
 
-  // PIO 1 SM 0 handles both reads and writes to port #0 - the GI address port.
-  // ISR holds the current address.
-  // Writes to this port are pushed twice to the RX FIFO, updating the
-  // low 8-bits of the READ_ADDR and WRITE_ADDR of the DMA channels attached to SM1 and SM2.
-
-  ; .WRAP_TARGET for SM 0
-PUBLIC handle_access0:
-  JMP PIN write0
-
-read0:
-  MOV PINS, ISR
-  JMP finish_read
-
-write0:
-  IN OSR, 8                       ; auto-push register address
-  PUSH                            ; push register address second time, leaving address in ISR
-  JMP loop
 
 
-  // PIO 1 SM 1 handles reads to port #1 - the GI data port.
+; 7 instructions
+; SM 1
+; Port #1 (read) accesses the register addressed by port #0.
+.PROGRAM sys80_read_port1
+.SIDE_SET 3 OPT PINDIRS
+.DEFINE PUBLIC cs_pin 27
 
-  ; .WRAP_TARGET for SM 1
-PUBLIC handle_read1:
-  JMP PIN loop                    ; ignore writes to port #1
+PUBLIC entry:
+.WRAP_TARGET
+  WAIT 1 GPIO cs_pin
+  SET PINDIRS, 0b00000  SIDE 0b000
+  WAIT 0 GPIO cs_pin
+  JMP PIN entry                   ; skip writes
 
-  PUSH                            ; push dummy value to chain to the DMA channel that will load the register
-  PULL                            ; pull register value
-  MOV PINS, OSR
-  JMP finish_read
+read:
+  PUSH                            ; Push one to trigger the DMA channel which
+                                  ; reads register data from internal SRAM.
+  SET PINDIRS, 0b11111  SIDE 0b111
+  OUT PINS, 8                     ; auto-pull register data from TX FIFO
+  .WRAP
 
-  // PIO 1 SM 2 handles writes to port #1 - the GI data port.
 
-  ; .WRAP_TARGET for SM 2
-PUBLIC handle_write1:
-  JMP PIN write1                  ; only handle writes to port #1
-  JMP loop
+; 5 instructions
+; SM 2
+; Port #1 (write) accesses the register addressed by port #0.
+.PROGRAM sys80_write_port1
+.SIDE_SET 3 OPT PINDIRS
+.DEFINE PUBLIC cs_pin 27
 
-write1:                           ; TODO: same as write0
-  IN OSR, 8                       ; push dummy value to chain to the DMA channel that will store the register
-  PUSH                            ; auto-push register data
-  JMP loop
+write:
+  PUSH                            ; Push dummy value to chain to DMA channel which
+                                  ; will write register data to internal SRAM.
+  IN PINS, 8                      ; auto-push register data
 
-  // PIO 1 SM 3 handlers accesses to port #2 - the VDP port
+PUBLIC entry:
+.WRAP_TARGET
+  WAIT 1 GPIO cs_pin
+  WAIT 0 GPIO cs_pin
+  JMP PIN write                   ; skip reads
+  .WRAP
 
-PUBLIC handle_access2:
-  JMP PIN write2
 
-read2:                            ; TODO: same as read0
-  MOV PINS, ISR
-  JMP finish_read
+; 8 instructions
+; SM 3
+; Port #2 (write) Streams data to FIFO in internal DRAM, 16 bits at a time.
+; Port #2 (read) Counts bytes written to this port.
+.PROGRAM sys80_port2
+.SIDE_SET 3 OPT PINDIRS
+.DEFINE PUBLIC cs_pin 28
 
-write2:
-  MOV ISR, ~ISR
-  IN OSR, 8                      ; Auto-push every 16-bits
-  JMP loop
+write:
+  IN PINS, 8                      ; auto-push every 32-bits
+
+  JMP X-- entry
+  
+PUBLIC entry:
+.WRAP_TARGET
+  WAIT 1 GPIO cs_pin
+  SET PINDIRS, 0b00000  SIDE 0b000
+
+  WAIT 0 GPIO cs_pin
+  JMP PIN write
+
+read:
+  MOV PINS, ~X
+  SET PINDIRS, 0b11111  SIDE 0b111
+  .WRAP
 
 
 % c-sdk {
-static inline void sys80_program_init(PIO pio, uint sm, uint offset, uint pins, int pio_clk_div) {
-  const static uint g_sm_handlers[4] = {
-    sys80_offset_handle_access0,
-    sys80_offset_handle_read1,
-    sys80_offset_handle_write1,
-    sys80_offset_handle_access2,
+static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
+  const static uint sm_wrap[4] = {
+    sys80_port0_wrap,
+    sys80_read_port1_wrap,
+    sys80_write_port1_wrap,
+    sys80_port2_wrap,
   };
 
-  const static uint g_sm_ports[4] = {
-    0,
-    1,
-    1,
-    2
+  const static uint sm_wrap_target[4] = {
+    sys80_port0_wrap_target,
+    sys80_read_port1_wrap_target,
+    sys80_write_port1_wrap_target,
+    sys80_port2_wrap_target,
   };
 
-  const static uint g_sm_auto_push[4] = {
+  const static uint sm_entry[4] = {
+    sys80_port0_offset_entry,
+    sys80_read_port1_offset_entry,
+    sys80_write_port1_offset_entry,
+    sys80_port2_offset_entry,
+  };
+
+  const static int sm_auto_pull[4] = {
     8,
     8,
     8,
-    16
+    -1,
   };
 
-	pio_sm_config c = sys80_program_get_default_config(offset);
+  const static int sm_auto_push[4] = {
+    32,
+    8,
+    8,
+    32,
+  };
 
-  sm_config_set_in_pins(&c, pins);
-  sm_config_set_set_pins(&c, pins + sys80_d0_pin, 8);
-  sm_config_set_sideset_pins(&c, pins + sys80_d0_pin + 5);
-  sm_config_set_jmp_pin(&c, pins + sys80_rd_pin);
+  const static int sm_in_shift_dir[4] = {
+    false,  // left
+    false,  // left
+    false,  // left
+    true,   // right
+  };
 
-  sm_config_set_wrap(&c, offset + g_sm_handlers[sm], offset + sys80_wrap);
+  pio_sm_config c = pio_get_default_sm_config();
 
-  sm_config_set_in_shift(&c, false /*left shift*/, true /*auto-push*/, g_sm_auto_push[sm]);
-  sm_config_set_out_shift(&c, true /*right shift*/, false /*auto-pull*/, 32);
+  sm_config_set_wrap(&c, offset + sm_wrap_target[sm], offset + sm_wrap[sm]);
 
-  pio_sm_init(pio, sm, sys80_offset_entry, &c);
+  sm_config_set_in_pins(&c, DATA_PINS);
+  sm_config_set_in_shift(&c, sm_in_shift_dir[sm], sm_auto_push[sm] >= 0, sm_auto_push[sm]);
+
+  sm_config_set_out_pins(&c, DATA_PINS, 8);
+  sm_config_set_out_shift(&c, true /*right shift*/, sm_auto_pull[sm] >= 0, sm_auto_pull[sm]);
+
+  sm_config_set_set_pins(&c, DATA_PINS, 5);
+
+  sm_config_set_sideset(&c, 4, true, true);  // Must match .SIDE_SET directive
+  sm_config_set_sideset_pins(&c, DATA_PINS + 5);
+
+  sm_config_set_jmp_pin(&c, RD_PIN);
+
+  pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
 
   // Configure the data pins so they can be controlled via PINDIRS but currently still inputs.
+  // TODO: this should be done externally to sys80_program_init; it isn't for a single SM.
   for (int i = 0; i < 8; ++i) {
-     pio_gpio_init(pio, pins + sys80_d0_pin + i);
+     pio_gpio_init(pio, DATA_PINS + i);
   }
-  pio_sm_set_consecutive_pindirs(pio, sm, pins + sys80_d0_pin, 8, false /*pindir*/ );
 
-  pio_sm_exec(pio, sm, pio_encode_set(pio_isr, 0));
-  pio_sm_exec(pio, sm, pio_encode_set(pio_y, g_sm_ports[sm]));
+  // Initialize X register for SM 3.
+  pio_sm_exec(pio, sm, pio_encode_mov_not(pio_x, pio_null));
 
+  pio_sm_init(pio, sm, offset + sm_entry[sm], &c);
 	pio_sm_set_enabled(pio, sm, true);
 }
 %}

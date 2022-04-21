@@ -1,0 +1,43 @@
+  ; D0    <- IN first
+  ; D1
+  ; D2
+  ; D3
+  ; D4
+  ; D5
+  ; D6
+  ; D7
+  ; CS0   <- OUT, SET first
+  ; CS1
+  ; CS2   <- OUT, SET last
+
+; Simulates an IO request by asserting a /CS for a precise amount of time then
+; capturing the state of the data bus at the end. Code elsewhere should
+; prepare /RD and D0-7 as appropriate.
+.PROGRAM sim_request
+PUBLIC entry:
+  .WRAP_TARGET
+  MOV PINS, ~NULL
+  PULL
+  MOV PINS, OSR  [19]
+  MOV ISR, PINS
+  PUSH
+  .WRAP
+
+% c-sdk {
+static inline void sim_request_program_init(PIO pio, uint sm, uint offset, uint data_pins, uint cs_pins) {
+  pio_sm_config c = sim_request_program_get_default_config(offset);
+
+  sm_config_set_in_pins(&c, data_pins);
+  sm_config_set_out_pins(&c, cs_pins, 3);
+  sm_config_set_set_pins(&c, cs_pins, 3);
+
+  pio_sm_set_consecutive_pindirs(pio, sm, cs_pins, 3, true /*pindirs*/);
+
+  for (int i = 0; i < 3; ++i) {
+     pio_gpio_init(pio, cs_pins + i);
+  }
+
+  pio_sm_init(pio, sm, offset + sim_request_offset_entry, &c);
+	pio_sm_set_enabled(pio, sm, true);
+}
+%}

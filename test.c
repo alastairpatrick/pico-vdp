@@ -2,15 +2,15 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "hardware/structs/bus_ctrl.h"
+#include "hardware/structs/syscfg.h"
 
 #include "mode.h"
+#include "pins.h"
+#include "sys80.h"
+#include "sys80_test.h"
 #include "video.h"
 
-int main() {
-  stdio_init_all();
-
-  // High bus priority for processor 0.
-  //hw_set_bits(&bus_ctrl_hw->priority, 1);
+void TestVideo() {
 
   const int bpp = 4;  // set to 2, 4 or 8
 
@@ -44,4 +44,13 @@ int main() {
   for (;;) {
     tight_loop_contents();
   }
+}
+
+int main() {
+  stdio_init_all();
+
+  //TestVideo();
+
+  InitSys80();
+  TestSys80();
 }

@@ -21,7 +21,9 @@
     "files.associations": {
         "vga.pio.h": "c",
         "dma.h": "c",
-        "video.h": "c"
+        "video.h": "c",
+        "sys80.pio.h": "c",
+        "syscfg.h": "c"
     },
     "cortex-debug.variableUseNaturalFormat": false,
 }
