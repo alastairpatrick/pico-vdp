@@ -40,24 +40,30 @@ read:
 
 
 ; SM 1
-; 7 instructions
+; 8 instructions
 ; Port #1 (read) accesses the register addressed by port #0.
 .PROGRAM sys80_read_port1
 .SIDE_SET 3 OPT PINDIRS
 .DEFINE PUBLIC cs_pin 27
+
+write:
+  OUT PINS, 8                     ; On a write request, need to finish the read,
+                                  ; without outputting on the data bus.
 
 PUBLIC entry:
 .WRAP_TARGET
   WAIT 1 GPIO cs_pin
   SET PINDIRS, 0b00000  SIDE 0b000
   WAIT 0 GPIO cs_pin
-  JMP PIN entry                   ; skip writes
+
+  PUSH                            ; Triggering the DMA controller is on the critical path
+                                  ; for read requests so it happens before even knowing
+                                  ; if this is a read or a write request.
+  JMP PIN write                   ; Jump on write. Happens in parallel with DMA controller.
 
 read:
-  PUSH                            ; Push one to trigger the DMA channel which
-                                  ; reads register data from internal SRAM.
-  SET PINDIRS, 0b11111  SIDE 0b111
-  OUT PINS, 8                     ; auto-pull register data from TX FIFO
+  SET PINDIRS, 0b11111  SIDE 0b111; In parallel with DMA controller.
+  OUT PINS, 8                     ; Auto-pull register data from TX FIFO, blocking on DMA controller.
   .WRAP
 
 
