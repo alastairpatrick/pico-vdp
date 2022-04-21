@@ -1,20 +1,19 @@
-  ; D0      <- IN, OUT, SET first
-	; D1
-	; D2
-	; D3
-	; D4
-	; D5      <- SIDE first
-	; D6
-	; D7      <- OUT, SET last
-  ; /RD     <- JMP PIN
+; D0      <- IN, OUT, SET first
+; D1
+; D2
+; D3
+; D4
+; D5      <- SIDE first
+; D6
+; D7      <- OUT, SET last
+; /RD     <- JMP PIN
 
 
-; 11 instructions
 ; SM 0
-; Port #0 (read/write) holds the selected register address. For easy retreaval on read
-; requests, it is stored in the ISR. It is also stored in the low 8-bits of the READ_ADDR
-; and WRITE_ADDR of a pair of DMA channels so that subsequent requests to port #1 will
-; access the appropriate byte of internal SRAM.
+; 11 instructions
+; Port #0 (read/write)
+; X holds the selected register index.
+; Y holds the most significant 24 bits of the READ_ADDR and WRITE_ADDR DMA channel registers modified on write.
 .PROGRAM sys80_port0
 .SIDE_SET 3 OPT PINDIRS
 .DEFINE PUBLIC cs_pin 26
@@ -40,8 +39,8 @@ read:
 
 
 
-; 7 instructions
 ; SM 1
+; 7 instructions
 ; Port #1 (read) accesses the register addressed by port #0.
 .PROGRAM sys80_read_port1
 .SIDE_SET 3 OPT PINDIRS
@@ -62,8 +61,8 @@ read:
   .WRAP
 
 
-; 5 instructions
 ; SM 2
+; 5 instructions
 ; Port #1 (write) accesses the register addressed by port #0.
 .PROGRAM sys80_write_port1
 .SIDE_SET 3 OPT PINDIRS
@@ -82,9 +81,9 @@ PUBLIC entry:
   .WRAP
 
 
-; 8 instructions
 ; SM 3
-; Port #2 (write) Streams data to FIFO in internal DRAM, 16 bits at a time.
+; 8 instructions
+; Port #2 (write) Streams data to ring buffer in internal SRAM.
 ; Port #2 (read) Counts bytes written to this port.
 .PROGRAM sys80_port2
 .SIDE_SET 3 OPT PINDIRS
@@ -146,7 +145,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     32,
   };
 
-  const static int sm_in_shift_dir[4] = {
+  const static bool sm_in_shift_dir[4] = {
     false,  // left
     false,  // left
     false,  // left

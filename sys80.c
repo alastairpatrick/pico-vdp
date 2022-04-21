@@ -91,7 +91,7 @@ void InitSM2() {
 void InitSM3() {
   dma_channel_config dma_cfg;
 
-  // These channels reads register words from the RX FIFO of SM3 and write to a ring buffer in
+  // These channels read words from the RX FIFO of SM3 and write to a ring buffer in
   // internal SRAM.
   dma_cfg = DefaultChannelConfig(g_write_ring_buffer_channel_1);
   channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX3);
