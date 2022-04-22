@@ -49,6 +49,10 @@ void TestVideo() {
 int main() {
   stdio_init_all();
 
+  // Give DMA controller bus priority over processors. For correct latency of read IO requests on the Z80
+  // bus interface, these must not be delayed.
+  bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
+
   //TestVideo();
 
   InitSys80();

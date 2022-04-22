@@ -23,7 +23,9 @@
         "dma.h": "c",
         "video.h": "c",
         "sys80.pio.h": "c",
-        "syscfg.h": "c"
+        "syscfg.h": "c",
+        "bus_ctrl.h": "c",
+        "busctrl.h": "c"
     },
     "cortex-debug.variableUseNaturalFormat": false,
 }

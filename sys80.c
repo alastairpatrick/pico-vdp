@@ -58,12 +58,14 @@ void InitSM1() {
   dma_cfg = DefaultChannelConfig(g_read_register_channel);
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
   channel_config_set_chain_to(&dma_cfg, g_await_read_channel);
+  dma_cfg.ctrl |= DMA_CH1_CTRL_TRIG_HIGH_PRIORITY_BITS;
   dma_channel_configure(g_read_register_channel, &dma_cfg, &pio1->txf[1], g_registers, 1, false);
 
   // This channel reads a dummy value from the RX FIFO of SM1 then chains to another channel.
   dma_cfg = DefaultChannelConfig(g_await_read_channel);
   channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX1);
   channel_config_set_chain_to(&dma_cfg, g_read_register_channel);
+  dma_cfg.ctrl |= DMA_CH1_CTRL_TRIG_HIGH_PRIORITY_BITS;
   dma_channel_configure(g_await_read_channel, &dma_cfg, &g_dummy, &pio1->rxf[1], 1, true);
 
   sys80_program_init(pio1, 1, pio_add_program(pio1, &sys80_read_port1_program));

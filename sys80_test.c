@@ -18,6 +18,16 @@ static void Init() {
   gpio_init(RD_PIN);
   gpio_set_dir(RD_PIN, GPIO_OUT);
   gpio_put(RD_PIN, 1);
+
+  // It's safe to turn off PIO0 pin synchronizers for these tests because it is only the RP2040 itself
+  // that sets data bus state, rather than an external asynchronous device like a Z80. It is not
+  // possible for PIO0 to see meta-instability in these tests. Leaving the pin synchronizer enabled
+  // would artificially increase measured latency by two cycles.
+  //
+  // In contrast, the pin synchronizers must be enabled for all pins in PIO1. When used in a real system,
+  // none of its inputs are synchronous, so pin synchronizers are necessary. We want to incoude that
+  // pin synchronizer delay in measurements.
+  pio0->input_sync_bypass = 0xFFFFFFFF;
 }
 
 static int SimulateIORead(int cs) {
