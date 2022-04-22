@@ -1,14 +1,14 @@
-  ; D0    <- IN first
-  ; D1
-  ; D2
-  ; D3
-  ; D4
-  ; D5
-  ; D6
-  ; D7
-  ; CS0   <- OUT, SET first
-  ; CS1
-  ; CS2   <- OUT, SET last
+; D0    <- IN first
+; D1
+; D2
+; D3
+; D4
+; D5
+; D6
+; D7
+; CS0   <- OUT, SET first
+; CS1
+; CS2   <- OUT, SET last
 
 ; Simulates an IO request by asserting a /CS for a precise amount of time then
 ; capturing the state of the data bus at the end. Code elsewhere should

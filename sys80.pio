@@ -10,7 +10,7 @@
 
 
 ; SM 0
-; 11 instructions
+; 12 instructions
 ; Port #0 (read/write)
 ; X holds the selected register index.
 ; Y holds the most significant 24 bits of the READ_ADDR and WRITE_ADDR DMA channel registers modified on write.
@@ -23,7 +23,8 @@ write:
   IN Y, 24
   IN X, 8                           ; auto-push to READ_ADDR
   IN Y, 24
-  IN X, 8                           ; auto-push to WRITE_ADDR
+  IN NULL, 1                        ; WRITE_ADDR has bit 7 forced zero so high registers are read-only
+  IN X, 7                           ; auto-push to WRITE_ADDR
 
 PUBLIC entry:  
 .WRAP_TARGET
@@ -40,15 +41,11 @@ read:
 
 
 ; SM 1
-; 8 instructions
+; 7 instructions
 ; Port #1 (read) accesses the register addressed by port #0.
 .PROGRAM sys80_read_port1
 .SIDE_SET 3 OPT PINDIRS
 .DEFINE PUBLIC cs_pin 27
-
-write:
-  OUT PINS, 8                     ; On a write request, need to finish the read,
-                                  ; without outputting on the data bus.
 
 PUBLIC entry:
 .WRAP_TARGET
@@ -59,11 +56,11 @@ PUBLIC entry:
   PUSH                            ; Triggering the DMA controller is on the critical path
                                   ; for read requests so it happens before even knowing
                                   ; if this is a read or a write request.
-  JMP PIN write                   ; Jump on write. Happens in parallel with DMA controller.
-
-read:
+  JMP PIN write                   ; Only output on read request. Happens in parallel with DMA controller.
   SET PINDIRS, 0b11111  SIDE 0b111; In parallel with DMA controller.
+write:
   OUT PINS, 8                     ; Auto-pull register data from TX FIFO, blocking on DMA controller.
+                                  ; For write requests, this won't actually be output.
   .WRAP
 
 

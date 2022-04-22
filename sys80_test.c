@@ -20,13 +20,11 @@ static void Init() {
   gpio_put(RD_PIN, 1);
 
   // It's safe to turn off PIO0 pin synchronizers for these tests because it is only the RP2040 itself
-  // that sets data bus state, rather than an external asynchronous device like a Z80. It is not
-  // possible for PIO0 to see meta-instability in these tests. Leaving the pin synchronizer enabled
-  // would artificially increase measured latency by two cycles.
+  // that sets input states, rather than an external asynchronous device like a Z80. Leaving the pin
+  // synchronizer enabled would artificially increase measured latency by two cycles.
   //
-  // In contrast, the pin synchronizers must be enabled for all pins in PIO1. When used in a real system,
-  // none of its inputs are synchronous, so pin synchronizers are necessary. We want to incoude that
-  // pin synchronizer delay in measurements.
+  // In contrast, the PIO1 pin synchronizers should be enabled; when used in a real system,
+  // its inputs are asynchronous. We want to include pin synchronizer delay in measurements.
   pio0->input_sync_bypass = 0xFFFFFFFF;
 }
 
@@ -84,11 +82,22 @@ void TestSys80() {
     assert(actual == i);
   }
 
-  // Test selecting and writing registers.
-  for (int i = 0; i < 256; ++i) {
+  // Test selecting and writing read/write registers.
+  for (int i = 0; i < 128; ++i) {
     SimulateIOWrite(0, i);
-    SimulateIOWrite(1, 255-i);
-    assert(g_registers[i] == 255-i);
+    g_registers[i] = 7;
+    SimulateIOWrite(1, i);
+    assert(g_registers[i] == i);
+  }
+
+  // Test selecting and writing read-only registers.
+  for (int i = 128; i < 256; ++i) {
+    SimulateIOWrite(0, i);
+    g_registers[i] = 7;
+    g_registers[i-128] = 7;
+    SimulateIOWrite(1, i);
+    assert(g_registers[i - 128] == i);
+    assert(g_registers[i] == 7);
   }
 
   // Test writing to ring buffer through port #2
