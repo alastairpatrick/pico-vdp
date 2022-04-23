@@ -189,19 +189,18 @@ static void InitControlBlocks(const VideoTiming* timing, int horizontal_repetiti
 }
 
 static void __not_in_flash_func(RestartVideo)() {
-  dma_hw->ints0 = 1u << g_dma_data_chan;
   g_current_line = 0;
   dma_channel_set_read_addr(g_dma_ctrl_chan, g_dma_control_blocks, true);
 }
 
-static void __not_in_flash_func(FrameIRQHandler)() {
-  if (dma_hw->intr & (1u << g_dma_data_chan)) {
-    dma_hw->ints0 = 1u << g_dma_data_chan;
+static void __not_in_flash_func(FrameISR)() {
+  if (dma_irqn_get_channel_status(DMA_IRQ_IDX, g_dma_data_chan)) {
+    dma_irqn_acknowledge_channel(DMA_IRQ_IDX, g_dma_data_chan);
     RestartVideo();
   }
 }
 
-static void __not_in_flash_func(LineIRQHandler)() {
+static void __not_in_flash_func(LineISR)() {
   pio_interrupt_clear(PIO, 0);
   g_line_renderer(g_display_lines[g_current_line & 1], g_current_line, g_line_width);
   ++g_current_line;
@@ -241,11 +240,11 @@ void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertic
   dma_channel_configure(g_dma_ctrl_chan, &dma_cfg, &dma_hw->ch[g_dma_data_chan].al3_transfer_count, NULL, 2, false);
 
   dma_irqn_set_channel_enabled(DMA_IRQ_IDX, g_dma_data_chan, true);
-  irq_add_shared_handler(DMA_IRQ_0 + DMA_IRQ_IDX, FrameIRQHandler, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
+  irq_add_shared_handler(DMA_IRQ_0 + DMA_IRQ_IDX, FrameISR, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
   irq_set_enabled(DMA_IRQ_0 + DMA_IRQ_IDX, true);
 
   pio_set_irq0_source_enabled(PIO, pis_interrupt0, true);
-  irq_set_exclusive_handler(PIO_IRQ, LineIRQHandler);
+  irq_set_exclusive_handler(PIO_IRQ, LineISR);
   irq_set_enabled(PIO_IRQ, true);
 
   RestartVideo();
