@@ -26,6 +26,6 @@ extern const VideoTiming g_timing640_480;
 extern const VideoTiming g_timing800_600;
 extern const VideoTiming g_timing1024_768;
 
-void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, int dma_irq_idx, LineRenderer renderer);
+void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, LineRenderer renderer);
 
 #endif  // VIDEO_H

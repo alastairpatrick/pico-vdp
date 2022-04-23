@@ -39,7 +39,7 @@ void TestVideo() {
     &g_timing640_480,  // g_timing640_480, g_timing800_600 or g_timing1024_768
     2,                 // divisor for horizontal resolution 1, 2 or 4
     2,                 // divisor for vertical resolution 2 or 4
-    0, renderer);
+    renderer);
 
   for (;;) {
     tight_loop_contents();

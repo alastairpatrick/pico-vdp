@@ -16,6 +16,10 @@
 #define MAX_VERT_RES 806
 #define DISPLAY_LINE_COUNT 2
 
+#define DMA_IRQ_IDX 0
+#define PIO pio0
+#define PIO_IRQ PIO0_IRQ_0
+
 static const uint LED_PIN = 25;
 static const uint VSYNC_PIN = 2;
 static const uint HSYNC_PIN = 3;
@@ -198,12 +202,12 @@ static void __not_in_flash_func(FrameIRQHandler)() {
 }
 
 static void __not_in_flash_func(LineIRQHandler)() {
-  pio_interrupt_clear(pio0, 0);
+  pio_interrupt_clear(PIO, 0);
   g_line_renderer(g_display_lines[g_current_line & 1], g_current_line, g_line_width);
   ++g_current_line;
 }
 
-void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, int dma_irq_idx, LineRenderer renderer) {
+void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, LineRenderer renderer) {
   g_current_line = 0;
   g_line_renderer = renderer;
   g_line_width = timing->horizontal.display_pixels / horizontal_repetitions;
@@ -212,15 +216,14 @@ void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertic
 
   InitControlBlocks(timing, horizontal_repetitions, vertical_repetitions);
 
-  PIO pio = pio0;
-  uint offset = pio_add_program(pio, &video_program);
-  video_program_init(pio, 0, offset, BLUE_BASE, VSYNC_PIN, timing->pio_clk_div * horizontal_repetitions);
+  uint offset = pio_add_program(PIO, &video_program);
+  video_program_init(PIO, 0, offset, BLUE_BASE, VSYNC_PIN, timing->pio_clk_div * horizontal_repetitions);
 
   g_dma_data_chan = dma_claim_unused_channel(true);
   g_dma_ctrl_chan = dma_claim_unused_channel(true);
 
   dma_channel_config dma_cfg = dma_channel_get_default_config(g_dma_data_chan);
-  channel_config_set_dreq(&dma_cfg, DREQ_PIO0_TX0);
+  channel_config_set_dreq(&dma_cfg, pio_get_dreq(PIO, 0, true /*is_tx*/));
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_32);
   channel_config_set_read_increment(&dma_cfg, true);
   channel_config_set_write_increment(&dma_cfg, false);
@@ -228,7 +231,7 @@ void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertic
   channel_config_set_irq_quiet(&dma_cfg, true);
 
     // read address and transfer count set by control channel.
-  dma_channel_configure(g_dma_data_chan, &dma_cfg, &pio0_hw->txf[0], NULL, 0, false);
+  dma_channel_configure(g_dma_data_chan, &dma_cfg, &PIO->txf[0], NULL, 0, false);
 
   dma_cfg = dma_channel_get_default_config(g_dma_ctrl_chan);
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_32);
@@ -237,13 +240,13 @@ void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertic
   channel_config_set_ring(&dma_cfg, true, 3);
   dma_channel_configure(g_dma_ctrl_chan, &dma_cfg, &dma_hw->ch[g_dma_data_chan].al3_transfer_count, NULL, 2, false);
 
-  dma_irqn_set_channel_enabled(dma_irq_idx, g_dma_data_chan, true);
-  irq_add_shared_handler(DMA_IRQ_0 + dma_irq_idx, FrameIRQHandler, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
-  irq_set_enabled(DMA_IRQ_0 + dma_irq_idx, true);
+  dma_irqn_set_channel_enabled(DMA_IRQ_IDX, g_dma_data_chan, true);
+  irq_add_shared_handler(DMA_IRQ_0 + DMA_IRQ_IDX, FrameIRQHandler, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
+  irq_set_enabled(DMA_IRQ_0 + DMA_IRQ_IDX, true);
 
-  pio_set_irq0_source_enabled(pio, pis_interrupt0, true);
-  irq_set_exclusive_handler(PIO0_IRQ_0, LineIRQHandler);
-  irq_set_enabled(PIO0_IRQ_0, true);
+  pio_set_irq0_source_enabled(PIO, pis_interrupt0, true);
+  irq_set_exclusive_handler(PIO_IRQ, LineIRQHandler);
+  irq_set_enabled(PIO_IRQ, true);
 
   RestartVideo();
 }
