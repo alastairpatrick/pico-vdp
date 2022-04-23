@@ -1,7 +1,7 @@
 VGA 15 pin connector
-1 red video - 2.2K to GPIO9, 1K to GPIO10, to 470ohm to GPIO11
-2 green video - 2.2K to GPIO6, 1K to GPIO7, 470ohm to GPIO8
-3 blue video - 1K to GPIO4, 470ohm to GPIO5
+1 red video - 2.2K to GPIO4, 1K to GPIO5, to 470ohm to GPIO6
+2 green video - 2.2K to GPIO7, 1K to GPIO8, 470ohm to GPIO9
+3 blue video - 1K to GPIO10, 470ohm to GPIO11
 4 NC
 5 GND
 6 GND

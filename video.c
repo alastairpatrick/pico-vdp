@@ -10,6 +10,8 @@
 #include "hardware/pll.h"
 
 #include "video.h"
+
+#include "pins.h"
 #include "video.pio.h"
 
 #define MAX_HORZ_DISPLAY_RES 1024
@@ -19,13 +21,6 @@
 #define DMA_IRQ_IDX 0
 #define PIO pio0
 #define PIO_IRQ PIO0_IRQ_0
-
-static const uint LED_PIN = 25;
-static const uint VSYNC_PIN = 2;
-static const uint HSYNC_PIN = 3;
-static const uint BLUE_BASE = 4;     // 4-5
-static const uint RED_BASE = 6;    // 6-8
-static const uint GREEN_BASE = 9;      // 9-11
 
 typedef struct {
   int32_t transfer_count;
@@ -76,10 +71,10 @@ static DMAControlBlock MakeControlBlock(uint32_t* read_addr, int transfer_count)
 static uint32_t MakeCmd(int run_pixels, bool hsync, bool vsync, bool raise_irq, int handler) {
   int sync_state = 0b11;
   if (hsync) {
-    sync_state &= 0b01;
+    sync_state &= 0b01;   // Set first sync bit active (low)
   }
   if (vsync) {
-    sync_state &= 0b10;
+    sync_state &= 0b10;   // Set secondsync bit active (low)
   }
   int pio_instruction = raise_irq ? pio_encode_irq_set(false, 0) : pio_encode_nop();
   pio_instruction |= pio_encode_sideset_opt(2, sync_state);
@@ -216,7 +211,7 @@ void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertic
   InitControlBlocks(timing, horizontal_repetitions, vertical_repetitions);
 
   uint offset = pio_add_program(PIO, &video_program);
-  video_program_init(PIO, 0, offset, BLUE_BASE, VSYNC_PIN, timing->pio_clk_div * horizontal_repetitions);
+  video_program_init(PIO, 0, offset, VIDEO_PINS, SYNC_PINS, timing->pio_clk_div * horizontal_repetitions);
 
   g_dma_data_chan = dma_claim_unused_channel(true);
   g_dma_ctrl_chan = dma_claim_unused_channel(true);
