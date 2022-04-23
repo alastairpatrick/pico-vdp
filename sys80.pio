@@ -85,7 +85,7 @@ PUBLIC entry:
 
 
 ; SM 3
-; 8 instructions
+; 7 instructions
 ; Port #2 (write) Streams data to ring buffer in internal SRAM.
 ; Port #2 (read) Counts bytes written to this port.
 .PROGRAM sys80_port2
@@ -94,8 +94,6 @@ PUBLIC entry:
 
 write:
   IN PINS, 8                      ; auto-push every 32-bits
-
-  JMP X-- entry
   
 PUBLIC entry:
 .WRAP_TARGET
@@ -106,7 +104,7 @@ PUBLIC entry:
   JMP PIN write
 
 read:
-  MOV PINS, ~X
+  MOV PINS, STATUS
   SET PINDIRS, 0b11111  SIDE 0b111
   .WRAP
 
@@ -172,6 +170,8 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
 
   sm_config_set_jmp_pin(&c, RD_PIN);
 
+  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 1);
+
   pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
 
   // Configure the data pins so they can be controlled via PINDIRS but currently still inputs.
@@ -179,9 +179,6 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   for (int i = 0; i < 8; ++i) {
      pio_gpio_init(pio, DATA_PINS + i);
   }
-
-  // Initialize X register for SM 3.
-  pio_sm_exec(pio, sm, pio_encode_mov_not(pio_x, pio_null));
 
   pio_sm_init(pio, sm, offset + sm_entry[sm], &c);
 	pio_sm_set_enabled(pio, sm, true);

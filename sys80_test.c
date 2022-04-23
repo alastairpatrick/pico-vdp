@@ -51,7 +51,8 @@ static void SimulateIOWrite(int cs, int data) {
 }
 
 void TestSys80() {
-  static int v;
+  int status;
+
   Init();
 
   // Test reading register 0 through port #1
@@ -100,30 +101,28 @@ void TestSys80() {
     assert(g_registers[i] == 7);
   }
 
-  // Test writing to ring buffer through port #2
-  for (int i = 0; i < RING_SIZE; ++i) {
-    int written = v = SimulateIORead(2);
-    assert(written == ((i*4) & 0xFF));
+
+  // Write command to port #2.
+  for (int i = 0; i < 4; ++i) {
+    assert(!IsCommandReady());
+
+    status = SimulateIORead(2);
+    assert(status == 0xFF);
     
-    SimulateIOWrite(2, 0x10);
-    SimulateIOWrite(2, 0x20);
-    SimulateIOWrite(2, 0x30);
-    SimulateIOWrite(2, 0x40);
+    SimulateIOWrite(2, i);
   }
 
-  for (int i = 0; i < RING_SIZE; ++i) {
-    assert(g_ring_buffer[i] == 0x40302010);
-  }
+  assert(IsCommandReady());
 
-  // Ring buffer wraps around
-  for (int i = 0; i < RING_SIZE; ++i) {
-    SimulateIOWrite(2, 0x50);
-    SimulateIOWrite(2, 0x60);
-    SimulateIOWrite(2, 0x70);
-    SimulateIOWrite(2, 0x80);
-  }
+  // Reading port #2 now indicates not ready.
+  status = SimulateIORead(2);
+  assert(status == 0x00);
 
-  for (int i = 0; i < RING_SIZE; ++i) {
-    assert(g_ring_buffer[i] == 0x80706050);
-  }
+  assert(UnloadCommand() == 0x03020100);
+  
+  assert(!IsCommandReady());
+
+  // Reading port #2 now indicates ready again.
+  status = SimulateIORead(2);
+  assert(status == 0xFF);
 }

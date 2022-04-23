@@ -25,7 +25,8 @@
         "sys80.pio.h": "c",
         "syscfg.h": "c",
         "bus_ctrl.h": "c",
-        "busctrl.h": "c"
+        "busctrl.h": "c",
+        "m0plus.h": "c"
     },
     "cortex-debug.variableUseNaturalFormat": false,
 }
