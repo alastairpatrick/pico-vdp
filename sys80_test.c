@@ -11,6 +11,10 @@
 #define PIO pio0
 #define SM 0
 
+#define RDAT 0
+#define RSEL 1
+#define FIFO 2
+
 static void Init() {
   uint offset = pio_add_program(PIO, &sim_request_program);
   sim_request_program_init(PIO, SM, offset, DATA_PINS, CS_PINS);
@@ -58,45 +62,45 @@ void TestSys80() {
   // Test reading register 0 through port #1
   for (int i = 0; i < 256; ++i) {
     g_registers[0] = i;
-    int actual = SimulateIORead(1);
+    int actual = SimulateIORead(RDAT);
     assert(actual == i);
   }
 
   // Test writing register 0 through port #1.
   for (int i = 0; i < 256; ++i) {
-    SimulateIOWrite(1, i);
+    SimulateIOWrite(RDAT, i);
     assert(g_registers[0] == i);
   }
 
   // Test reading and writing selected register through port #0
   for (int i = 0; i < 256; ++i) {
-    SimulateIOWrite(0, i);
-    int actual = SimulateIORead(0);
+    SimulateIOWrite(RSEL, i);
+    int actual = SimulateIORead(RSEL);
     assert(actual == i);
   }
 
   // Test selecting and reading registers.
   for (int i = 0; i < 256; ++i) {
-    SimulateIOWrite(0, i);
+    SimulateIOWrite(RSEL, i);
     g_registers[i] = i;
-    int actual = SimulateIORead(1);
+    int actual = SimulateIORead(RDAT);
     assert(actual == i);
   }
 
   // Test selecting and writing read/write registers.
   for (int i = 0; i < 128; ++i) {
-    SimulateIOWrite(0, i);
+    SimulateIOWrite(RSEL, i);
     g_registers[i] = 7;
-    SimulateIOWrite(1, i);
+    SimulateIOWrite(RDAT, i);
     assert(g_registers[i] == i);
   }
 
   // Test selecting and writing read-only registers.
   for (int i = 128; i < 256; ++i) {
-    SimulateIOWrite(0, i);
+    SimulateIOWrite(RSEL, i);
     g_registers[i] = 7;
     g_registers[i-128] = 7;
-    SimulateIOWrite(1, i);
+    SimulateIOWrite(RDAT, i);
     assert(g_registers[i - 128] == i);
     assert(g_registers[i] == 7);
   }
@@ -106,16 +110,16 @@ void TestSys80() {
   for (int i = 0; i < 4; ++i) {
     assert(!IsCommandReady());
 
-    status = SimulateIORead(2);
+    status = SimulateIORead(FIFO);
     assert(status == 0xFF);
     
-    SimulateIOWrite(2, i);
+    SimulateIOWrite(FIFO, i);
   }
 
   assert(IsCommandReady());
 
   // Reading port #2 now indicates not ready.
-  status = SimulateIORead(2);
+  status = SimulateIORead(FIFO);
   assert(status == 0x00);
 
   assert(UnloadCommand() == 0x03020100);
@@ -123,6 +127,6 @@ void TestSys80() {
   assert(!IsCommandReady());
 
   // Reading port #2 now indicates ready again.
-  status = SimulateIORead(2);
+  status = SimulateIORead(FIFO);
   assert(status == 0xFF);
 }

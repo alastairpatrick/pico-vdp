@@ -11,12 +11,12 @@
 
 ; SM 0
 ; 12 instructions
-; Port #0 (read/write)
+; Port RSEL (read/write)
 ; X holds the selected register index.
 ; Y holds the most significant 24 bits of the READ_ADDR and WRITE_ADDR DMA channel registers modified on write.
-.PROGRAM sys80_port0
+.PROGRAM sys80_rsel
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 26
+.DEFINE PUBLIC cs_pin 27
 
 write:
   MOV X, PINS
@@ -42,10 +42,10 @@ read:
 
 ; SM 1
 ; 7 instructions
-; Port #1 (read) accesses the register addressed by port #0.
-.PROGRAM sys80_read_port1
+; Port RDAT (read) accesses the register addressed by port RSEL.
+.PROGRAM sys80_read_rdat
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 27
+.DEFINE PUBLIC cs_pin 26
 
 PUBLIC entry:
 .WRAP_TARGET
@@ -66,10 +66,10 @@ write:
 
 ; SM 2
 ; 5 instructions
-; Port #1 (write) accesses the register addressed by port #0.
-.PROGRAM sys80_write_port1
+; Port RDAT (write) accesses the register addressed by port RSEL.
+.PROGRAM sys80_write_rdat
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 27
+.DEFINE PUBLIC cs_pin 26
 
 write:
   PUSH                            ; Push dummy value to chain to DMA channel which
@@ -86,9 +86,9 @@ PUBLIC entry:
 
 ; SM 3
 ; 7 instructions
-; Port #2 (write) Streams data to ring buffer in internal SRAM.
-; Port #2 (read) Counts bytes written to this port.
-.PROGRAM sys80_port2
+; Port FIFO (write) Streams data to ring buffer in internal SRAM.
+; Port FIFO (read) Counts bytes written to this port.
+.PROGRAM sys80_fifo
 .SIDE_SET 3 OPT PINDIRS
 .DEFINE PUBLIC cs_pin 28
 
@@ -112,24 +112,24 @@ read:
 % c-sdk {
 static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   const static uint sm_wrap[4] = {
-    sys80_port0_wrap,
-    sys80_read_port1_wrap,
-    sys80_write_port1_wrap,
-    sys80_port2_wrap,
+    sys80_rsel_wrap,
+    sys80_read_rdat_wrap,
+    sys80_write_rdat_wrap,
+    sys80_fifo_wrap,
   };
 
   const static uint sm_wrap_target[4] = {
-    sys80_port0_wrap_target,
-    sys80_read_port1_wrap_target,
-    sys80_write_port1_wrap_target,
-    sys80_port2_wrap_target,
+    sys80_rsel_wrap_target,
+    sys80_read_rdat_wrap_target,
+    sys80_write_rdat_wrap_target,
+    sys80_fifo_wrap_target,
   };
 
   const static uint sm_entry[4] = {
-    sys80_port0_offset_entry,
-    sys80_read_port1_offset_entry,
-    sys80_write_port1_offset_entry,
-    sys80_port2_offset_entry,
+    sys80_rsel_offset_entry,
+    sys80_read_rdat_offset_entry,
+    sys80_write_rdat_offset_entry,
+    sys80_fifo_offset_entry,
   };
 
   const static int sm_auto_pull[4] = {

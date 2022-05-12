@@ -46,7 +46,7 @@ static void InitSM0() {
   pio_sm_exec(SYS80_PIO, 0, pio_encode_pull(false, true));
   pio_sm_exec(SYS80_PIO, 0, pio_encode_mov(pio_y, pio_osr));
 
-  sys80_program_init(SYS80_PIO, 0, pio_add_program(SYS80_PIO, &sys80_port0_program));
+  sys80_program_init(SYS80_PIO, 0, pio_add_program(SYS80_PIO, &sys80_rsel_program));
 }
 
 static void InitSM1() {
@@ -66,7 +66,7 @@ static void InitSM1() {
   dma_cfg.ctrl |= DMA_CH1_CTRL_TRIG_HIGH_PRIORITY_BITS;
   dma_channel_configure(g_await_read_channel, &dma_cfg, &g_dummy, &SYS80_PIO->rxf[1], 1, true);
 
-  sys80_program_init(SYS80_PIO, 1, pio_add_program(SYS80_PIO, &sys80_read_port1_program));
+  sys80_program_init(SYS80_PIO, 1, pio_add_program(SYS80_PIO, &sys80_read_rdat_program));
 }
 
 static void InitSM2() {
@@ -85,11 +85,11 @@ static void InitSM2() {
   channel_config_set_chain_to(&dma_cfg, g_write_register_channel);
   dma_channel_configure(g_await_write_channel, &dma_cfg, &g_dummy, &SYS80_PIO->rxf[2], 1, true);
 
-  sys80_program_init(SYS80_PIO, 2, pio_add_program(SYS80_PIO, &sys80_write_port1_program));
+  sys80_program_init(SYS80_PIO, 2, pio_add_program(SYS80_PIO, &sys80_write_rdat_program));
 }
 
 static void InitSM3() {
-  sys80_program_init(SYS80_PIO, 3, pio_add_program(SYS80_PIO, &sys80_port2_program));
+  sys80_program_init(SYS80_PIO, 3, pio_add_program(SYS80_PIO, &sys80_fifo_program));
 }
 
 void InitSys80() {
