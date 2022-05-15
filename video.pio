@@ -27,7 +27,7 @@ static inline void video_program_init(PIO pio, uint sm, uint offset, uint rgb_pi
   }
   pio_sm_set_consecutive_pindirs(pio, sm, rgb_pins, NUM_RGB_PINS, true);
 
-  const int NUM_SYNC_PINS = 8;
+  const int NUM_SYNC_PINS = 2;
   for (int i = 0; i < NUM_SYNC_PINS; ++i) {
      pio_gpio_init(pio, sync_pins + i);
   }
