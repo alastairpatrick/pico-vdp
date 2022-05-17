@@ -16,7 +16,7 @@
 ; Y holds the most significant 24 bits of the READ_ADDR and WRITE_ADDR DMA channel registers modified on write.
 .PROGRAM sys80_rsel
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 27
+.DEFINE PUBLIC cs_pin 26
 
 write:
   MOV X, PINS
@@ -45,7 +45,7 @@ read:
 ; Port RDAT (read) accesses the register addressed by port RSEL.
 .PROGRAM sys80_read_rdat
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 26
+.DEFINE PUBLIC cs_pin 22
 
 PUBLIC entry:
 .WRAP_TARGET
@@ -69,7 +69,7 @@ write:
 ; Port RDAT (write) accesses the register addressed by port RSEL.
 .PROGRAM sys80_write_rdat
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 26
+.DEFINE PUBLIC cs_pin 22
 
 write:
   PUSH                            ; Push dummy value to chain to DMA channel which
@@ -90,7 +90,7 @@ PUBLIC entry:
 ; Port FIFO (read) Counts bytes written to this port.
 .PROGRAM sys80_fifo
 .SIDE_SET 3 OPT PINDIRS
-.DEFINE PUBLIC cs_pin 28
+.DEFINE PUBLIC cs_pin 27
 
 write:
   IN PINS, 8                      ; auto-push every 32-bits
@@ -173,6 +173,10 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 1);
 
   pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
+
+  pio_gpio_init(pio, CS0_PIN);
+  pio_gpio_init(pio, CS1_PIN);
+  pio_gpio_init(pio, CS2_PIN);
 
   // Configure the data pins so they can be controlled via PINDIRS but currently still inputs.
   // TODO: this should be done externally to sys80_program_init; it isn't for a single SM.

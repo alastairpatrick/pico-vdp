@@ -17,7 +17,7 @@
 
 static void Init() {
   uint offset = pio_add_program(PIO, &sim_request_program);
-  sim_request_program_init(PIO, SM, offset, DATA_PINS, CS_PINS);
+  sim_request_program_init(PIO, SM, offset, DATA_PINS, CS0_PIN, CS1_PIN, CS2_PIN);
 
   gpio_init(RD_PIN);
   gpio_set_dir(RD_PIN, GPIO_OUT);

@@ -15,6 +15,8 @@
 #define PWM_PIN 13
 #define DATA_PINS 14
 #define LED_PIN 25
-#define CS_PINS 26
+#define CS0_PIN 22
+#define CS1_PIN 26
+#define CS2_PIN 27
 
 #endif  // PINS_H

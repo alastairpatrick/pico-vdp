@@ -10,6 +10,17 @@
 #include "sys80_test.h"
 #include "video.h"
 
+void __not_in_flash_func(BlinkLoop)() {
+  gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
+  for (;;) {
+      gpio_put(LED_PIN, 0);
+      sleep_ms(250);
+      gpio_put(LED_PIN, 1);
+      sleep_ms(1000);
+  }
+}
+
 void TestVideo() {
 
   const int bpp = 4;  // set to 2, 4 or 8
@@ -40,10 +51,6 @@ void TestVideo() {
     2,                 // divisor for horizontal resolution 1, 2 or 4
     2,                 // divisor for vertical resolution 2 or 4
     renderer);
-
-  for (;;) {
-    tight_loop_contents();
-  }
 }
 
 int main() {
@@ -53,8 +60,9 @@ int main() {
   // bus interface, these must not be delayed.
   bus_ctrl_hw->priority = BUSCTRL_BUS_PRIORITY_DMA_R_BITS | BUSCTRL_BUS_PRIORITY_DMA_W_BITS;
 
-  //TestVideo();
-
   InitSys80();
-  TestSys80();
+  TestVideo();
+  BlinkLoop();
+
+  //TestSys80();
 }
