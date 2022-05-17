@@ -81,16 +81,11 @@ static uint32_t MakeCmd(int run_pixels, bool hsync, bool vsync, bool raise_irq, 
   return (run_pixels-1) | (pio_instruction << 11) | (handler << 27);
 }
 
-static void InitControlBlocks(const VideoTiming* timing, int horz_reps, int vert_reps) {
+static void InitControlBlocks(const VideoTiming* timing, int horz_shift, int vert_shift) {
   const VideoAxisTiming* horz = &timing->horz;
   assert(horz->display_pixels <= MAX_HORZ_DISPLAY_RES);
-  assert(horz->display_pixels % (horz_reps * sizeof(uint32_t)) == 0);
-  assert(horz->front_porch_pixels % horz_reps == 0);
-  assert(horz->sync_pixels % horz_reps == 0);
-  assert(horz->back_porch_pixels % horz_reps == 0);
 
   const VideoAxisTiming* vert = &timing->vert;
-  assert(vert->display_pixels % vert_reps == 0);
   assert(vert->display_pixels + vert->front_porch_pixels + vert->sync_pixels + vert->back_porch_pixels <= MAX_VERT_RES);
 
   // <-------- vporch --------><- fporch --><- hsync --><- bporch -->
@@ -119,19 +114,23 @@ static void InitControlBlocks(const VideoTiming* timing, int horz_reps, int vert
   // <-------- vsync ---------><- fporchv -><- hsyncv -><- bporchv ->
   // ...
 
-  uint32_t vporch_cmd = MakeCmd(horz->display_pixels / horz_reps + 1, false, false, false, video_offset_handle_non_display);
-  uint32_t display_cmd = MakeCmd(horz->display_pixels / horz_reps, false, false, false, video_offset_handle_display);
-  uint32_t vsync_cmd = MakeCmd(horz->display_pixels / horz_reps + 1, false, true /*vsync*/, false, video_offset_handle_non_display);
+  int display_shifted = horz->display_pixels >> horz_shift;
+  uint32_t vporch_cmd = MakeCmd(display_shifted + 1, false, false, false, video_offset_handle_non_display);
+  uint32_t display_cmd = MakeCmd(display_shifted, false, false, false, video_offset_handle_display);
+  uint32_t vsync_cmd = MakeCmd(display_shifted + 1, false, true /*vsync*/, false, video_offset_handle_non_display);
 
-  uint32_t fporch_cmd = MakeCmd(horz->front_porch_pixels / horz_reps - 4, false, false, false, video_offset_handle_non_display);
-  uint32_t fporchi_cmd = MakeCmd(horz->front_porch_pixels / horz_reps - 4, false, false, true /* raise_irq */, video_offset_handle_non_display);
-  uint32_t fporchv_cmd = MakeCmd(horz->front_porch_pixels / horz_reps - 4, false, true /* vsync */, false, video_offset_handle_non_display);
+  int front_shifted = horz->front_porch_pixels >> horz_shift;
+  uint32_t fporch_cmd = MakeCmd(front_shifted - 4, false, false, false, video_offset_handle_non_display);
+  uint32_t fporchi_cmd = MakeCmd(front_shifted - 4, false, false, true /* raise_irq */, video_offset_handle_non_display);
+  uint32_t fporchv_cmd = MakeCmd(front_shifted - 4, false, true /* vsync */, false, video_offset_handle_non_display);
 
-  uint32_t hsync_cmd = MakeCmd(horz->sync_pixels / horz_reps - 2, true /* hsync */, false, false, video_offset_handle_non_display);
-  uint32_t hsyncv_cmd = MakeCmd(horz->sync_pixels / horz_reps - 2, true /* hsync */, true /* vsync */, false, video_offset_handle_non_display);
+  int sync_shifted = horz->sync_pixels >> horz_shift;
+  uint32_t hsync_cmd = MakeCmd(sync_shifted - 2, true /* hsync */, false, false, video_offset_handle_non_display);
+  uint32_t hsyncv_cmd = MakeCmd(sync_shifted - 2, true /* hsync */, true /* vsync */, false, video_offset_handle_non_display);
 
-  uint32_t bporch_cmd = MakeCmd(horz->back_porch_pixels / horz_reps - 3, false, false, false, video_offset_handle_non_display);
-  uint32_t bporchv_cmd = MakeCmd(horz->back_porch_pixels / horz_reps - 3, false, true /* vsync */, false, video_offset_handle_non_display);
+  int back_shifted = horz->back_porch_pixels >> horz_shift;
+  uint32_t bporch_cmd = MakeCmd(back_shifted - 3, false, false, false, video_offset_handle_non_display);
+  uint32_t bporchv_cmd = MakeCmd(back_shifted - 3, false, true /* vsync */, false, video_offset_handle_non_display);
 
   static uint32_t display_cmds[1];
   display_cmds[0] = display_cmd;
@@ -166,13 +165,14 @@ static void InitControlBlocks(const VideoTiming* timing, int horz_reps, int vert
 
   DMAControlBlock* control = g_dma_control_blocks;
 
+  int vert_reps = 1 << vert_shift;
   for (int y = 0; y < vert->back_porch_pixels; ++y) {
-    bool raise_irq = ((vert->back_porch_pixels - y - 1) % vert_reps == 0) && (vert->back_porch_pixels - y < vert_reps * DISPLAY_LINE_COUNT);
+    bool raise_irq = ((vert->back_porch_pixels - y - 1) & (vert_reps-1) == 0) && (vert->back_porch_pixels - y < (DISPLAY_LINE_COUNT << vert_shift));
     *control++ = MakeControlBlock(raise_irq ? vporch_irq_cmds : vporch_cmds, count_of(vporch_cmds));
   }
 
   int display_line_idx = 0;
-  int display_line_size = horz->display_pixels / horz_reps / sizeof(uint32_t);
+  int display_line_size = display_shifted / sizeof(uint32_t);
 
   for (int y = 0; y < vert->display_pixels; y += vert_reps) {
     for (int i = 0; i < vert_reps; ++i) {
@@ -215,17 +215,17 @@ static void __not_in_flash_func(LineISR)() {
   ++g_current_line;
 }
 
-void InitVideo(const VideoTiming* timing, int horz_reps, int vert_reps, VideoLineRenderer renderer) {
+void InitVideo(const VideoTiming* timing, int horz_shift, int vert_shift, VideoLineRenderer renderer) {
   g_current_line = 0;
   g_line_renderer = renderer;
-  g_line_width = timing->horz.display_pixels / horz_reps;
+  g_line_width = timing->horz.display_pixels >> horz_shift;
 
   set_sys_clock_pll(timing->vco_freq, timing->vco_div1, timing->vco_div2);
 
-  InitControlBlocks(timing, horz_reps, vert_reps);
+  InitControlBlocks(timing, horz_shift, vert_shift);
 
   uint offset = pio_add_program(PIO, &video_program);
-  video_program_init(PIO, 0, offset, VIDEO_PINS, SYNC_PINS, timing->pio_clk_div * horz_reps);
+  video_program_init(PIO, 0, offset, VIDEO_PINS, SYNC_PINS, timing->pio_clk_div << horz_shift);
 
   g_dma_data_chan = dma_claim_unused_channel(true);
   g_dma_ctrl_chan = dma_claim_unused_channel(true);
