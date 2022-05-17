@@ -25,7 +25,7 @@ void TestVideo() {
 
   const int bpp = 4;  // set to 2, 4 or 8
 
-  LineRenderer renderer = NULL;
+  VideoLineRenderer renderer = NULL;
   switch (bpp) {
     case 2:
       renderer = RenderLine4;

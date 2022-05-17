@@ -6,7 +6,7 @@ typedef struct {
   int front_porch_pixels;
   int sync_pixels;
   int back_porch_pixels;
-} AxisTiming;
+} VideoAxisTiming;
 
 typedef struct {
   // See RP2040 datasheet for constraints on PLL parameters.
@@ -16,16 +16,16 @@ typedef struct {
 
   int pio_clk_div;  // in 1/256 cycles
 
-  AxisTiming horizontal;
-  AxisTiming vertical;
+  VideoAxisTiming horizontal;
+  VideoAxisTiming vertical;
 } VideoTiming;
 
-typedef void (*LineRenderer)(uint32_t* dest, int line, int width);
+typedef void (*VideoLineRenderer)(uint32_t* dest, int line, int width);
 
 extern const VideoTiming g_timing640_480;
 extern const VideoTiming g_timing800_600;
 extern const VideoTiming g_timing1024_768;
 
-void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, LineRenderer renderer);
+void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, VideoLineRenderer renderer);
 
 #endif  // VIDEO_H

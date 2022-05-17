@@ -53,12 +53,12 @@ const VideoTiming g_timing1024_768 = {
 
 static uint32_t g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_RES / 4];  // double buffered
 
-static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 5 + 1];
+static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 3];
 static int g_dma_data_chan, g_dma_ctrl_chan;
 
 static int g_current_line;
 static int g_line_width;
-static LineRenderer g_line_renderer;
+static VideoLineRenderer g_line_renderer;
 
 static DMAControlBlock MakeControlBlock(uint32_t* read_addr, int transfer_count) {
   DMAControlBlock result = {
@@ -82,14 +82,14 @@ static uint32_t MakeCmd(int run_pixels, bool hsync, bool vsync, bool raise_irq, 
 }
 
 static void InitControlBlocks(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions) {
-  const AxisTiming* horizontal = &timing->horizontal;
+  const VideoAxisTiming* horizontal = &timing->horizontal;
   assert(horizontal->display_pixels <= MAX_HORZ_DISPLAY_RES);
   assert(horizontal->display_pixels % (horizontal_repetitions * sizeof(uint32_t)) == 0);
   assert(horizontal->front_porch_pixels % horizontal_repetitions == 0);
   assert(horizontal->sync_pixels % horizontal_repetitions == 0);
   assert(horizontal->back_porch_pixels % horizontal_repetitions == 0);
 
-  const AxisTiming* vertical = &timing->vertical;
+  const VideoAxisTiming* vertical = &timing->vertical;
   assert(vertical->display_pixels % vertical_repetitions == 0);
   assert(vertical->display_pixels + vertical->front_porch_pixels + vertical->sync_pixels + vertical->back_porch_pixels <= MAX_VERT_RES);
 
@@ -119,68 +119,82 @@ static void InitControlBlocks(const VideoTiming* timing, int horizontal_repetiti
   // <-------- vsync ---------><- fporchv -><- hsyncv -><- bporchv ->
   // ...
 
-  static uint32_t display_cmd, fporch_cmd, fporchi_cmd, fporchv_cmd, hsync_cmd, hsyncv_cmd, bporch_cmd, bporchv_cmd, vporch_cmd, vsync_cmd;
+  uint32_t vporch_cmd = MakeCmd(horizontal->display_pixels / horizontal_repetitions + 1, false, false, false, video_offset_handle_non_display);
+  uint32_t display_cmd = MakeCmd(horizontal->display_pixels / horizontal_repetitions, false, false, false, video_offset_handle_display);
+  uint32_t vsync_cmd = MakeCmd(horizontal->display_pixels / horizontal_repetitions + 1, false, true /*vsync*/, false, video_offset_handle_non_display);
 
-  vporch_cmd = MakeCmd(horizontal->display_pixels / horizontal_repetitions + 1, false, false, false, video_offset_handle_non_display);
-  display_cmd = MakeCmd(horizontal->display_pixels / horizontal_repetitions, false, false, false, video_offset_handle_display);
-  vsync_cmd = MakeCmd(horizontal->display_pixels / horizontal_repetitions + 1, false, true /*vsync*/, false, video_offset_handle_non_display);
+  uint32_t fporch_cmd = MakeCmd(horizontal->front_porch_pixels / horizontal_repetitions - 4, false, false, false, video_offset_handle_non_display);
+  uint32_t fporchi_cmd = MakeCmd(horizontal->front_porch_pixels / horizontal_repetitions - 4, false, false, true /* raise_irq */, video_offset_handle_non_display);
+  uint32_t fporchv_cmd = MakeCmd(horizontal->front_porch_pixels / horizontal_repetitions - 4, false, true /* vsync */, false, video_offset_handle_non_display);
 
-  fporch_cmd = MakeCmd(horizontal->front_porch_pixels / horizontal_repetitions - 4, false, false, false, video_offset_handle_non_display);
-  fporchi_cmd = MakeCmd(horizontal->front_porch_pixels / horizontal_repetitions - 4, false, false, true /* raise_irq */, video_offset_handle_non_display);
-  fporchv_cmd = MakeCmd(horizontal->front_porch_pixels / horizontal_repetitions - 4, false, true /* vsync */, false, video_offset_handle_non_display);
+  uint32_t hsync_cmd = MakeCmd(horizontal->sync_pixels / horizontal_repetitions - 2, true /* hsync */, false, false, video_offset_handle_non_display);
+  uint32_t hsyncv_cmd = MakeCmd(horizontal->sync_pixels / horizontal_repetitions - 2, true /* hsync */, true /* vsync */, false, video_offset_handle_non_display);
 
-  hsync_cmd = MakeCmd(horizontal->sync_pixels / horizontal_repetitions - 2, true /* hsync */, false, false, video_offset_handle_non_display);
-  hsyncv_cmd = MakeCmd(horizontal->sync_pixels / horizontal_repetitions - 2, true /* hsync */, true /* vsync */, false, video_offset_handle_non_display);
+  uint32_t bporch_cmd = MakeCmd(horizontal->back_porch_pixels / horizontal_repetitions - 3, false, false, false, video_offset_handle_non_display);
+  uint32_t bporchv_cmd = MakeCmd(horizontal->back_porch_pixels / horizontal_repetitions - 3, false, true /* vsync */, false, video_offset_handle_non_display);
 
-  bporch_cmd = MakeCmd(horizontal->back_porch_pixels / horizontal_repetitions - 3, false, false, false, video_offset_handle_non_display);
-  bporchv_cmd = MakeCmd(horizontal->back_porch_pixels / horizontal_repetitions - 3, false, true /* vsync */, false, video_offset_handle_non_display);
+  static uint32_t display_cmds[1];
+  display_cmds[0] = display_cmd;
+
+  static uint32_t vporch_cmds[4];
+  vporch_cmds[0] = vporch_cmd;
+  vporch_cmds[1] = fporch_cmd;
+  vporch_cmds[2] = hsync_cmd;
+  vporch_cmds[3] = bporch_cmd;
+
+  static uint32_t vporch_irq_cmds[4];
+  vporch_irq_cmds[0] = vporch_cmd;
+  vporch_irq_cmds[1] = fporchi_cmd;
+  vporch_irq_cmds[2] = hsync_cmd;
+  vporch_irq_cmds[3] = bporch_cmd;
+
+  static uint32_t vporch_vsync_cmds[4];
+  vporch_vsync_cmds[0] = vsync_cmd;
+  vporch_vsync_cmds[1] = fporchv_cmd;
+  vporch_vsync_cmds[2] = hsyncv_cmd;
+  vporch_vsync_cmds[3] = bporchv_cmd;
+
+  static uint32_t hporch_cmds[3];
+  hporch_cmds[0] = fporch_cmd;
+  hporch_cmds[1] = hsync_cmd;
+  hporch_cmds[2] = bporch_cmd;
+
+  static uint32_t hporch_irq_cmds[3];
+  hporch_irq_cmds[0] = fporchi_cmd;
+  hporch_irq_cmds[1] = hsync_cmd;
+  hporch_irq_cmds[2] = bporch_cmd;
 
   DMAControlBlock* control = g_dma_control_blocks;
 
-  int display_line_idx = 0;
-  int display_line_size = horizontal->display_pixels / horizontal_repetitions / sizeof(uint32_t);
-
   for (int y = 0; y < vertical->back_porch_pixels; ++y) {
     bool raise_irq = ((vertical->back_porch_pixels - y - 1) % vertical_repetitions == 0) && (vertical->back_porch_pixels - y < vertical_repetitions * DISPLAY_LINE_COUNT);
-
-    *(control++) = MakeControlBlock(&vporch_cmd, 1);
-    *(control++) = MakeControlBlock(raise_irq ? &fporchi_cmd : &fporch_cmd, 1);
-    *(control++) = MakeControlBlock(&hsync_cmd, 1);
-    *(control++) = MakeControlBlock(&bporch_cmd, 1);
+    *control++ = MakeControlBlock(raise_irq ? vporch_irq_cmds : vporch_cmds, count_of(vporch_cmds));
   }
+
+  int display_line_idx = 0;
+  int display_line_size = horizontal->display_pixels / horizontal_repetitions / sizeof(uint32_t);
 
   for (int y = 0; y < vertical->display_pixels; y += vertical_repetitions) {
     for (int i = 0; i < vertical_repetitions; ++i) {
       bool raise_irq = (i == vertical_repetitions-1) && (y < vertical->display_pixels - DISPLAY_LINE_COUNT);
 
-      *(control++) = MakeControlBlock(&display_cmd, 1);
-      *(control++) = MakeControlBlock(g_display_lines[display_line_idx], display_line_size);
-      *(control++) = MakeControlBlock(raise_irq ? &fporchi_cmd : &fporch_cmd, 1);
-      *(control++) = MakeControlBlock(&hsync_cmd, 1);
-      *(control++) = MakeControlBlock(&bporch_cmd, 1);
+      *control++ = MakeControlBlock(display_cmds, count_of(display_cmds));
+      *control++ = MakeControlBlock(g_display_lines[display_line_idx], display_line_size);
+      *control++ = MakeControlBlock(raise_irq ? hporch_irq_cmds : hporch_cmds, count_of(hporch_cmds));
     }
 
-    ++display_line_idx;
-    if (display_line_idx == DISPLAY_LINE_COUNT) {
-      display_line_idx = 0;
-    }
+    display_line_idx = display_line_idx & (DISPLAY_LINE_COUNT - 1);
   }
 
   for (int y = 0; y < vertical->front_porch_pixels; ++y) {
-    *(control++) = MakeControlBlock(&vporch_cmd, 1);
-    *(control++) = MakeControlBlock(&fporch_cmd, 1);
-    *(control++) = MakeControlBlock(&hsync_cmd, 1);
-    *(control++) = MakeControlBlock(&bporch_cmd, 1);
+    *control++ = MakeControlBlock(vporch_cmds, count_of(vporch_cmds));
   }
 
   for (int y = 0; y < vertical->sync_pixels; ++y) {
-    *(control++) = MakeControlBlock(&vsync_cmd, 1);
-    *(control++) = MakeControlBlock(&fporchv_cmd, 1);
-    *(control++) = MakeControlBlock(&hsyncv_cmd, 1);
-    *(control++) = MakeControlBlock(&bporchv_cmd, 1);
+    *control++ = MakeControlBlock(vporch_vsync_cmds, count_of(vporch_vsync_cmds));
   }
 
-  *(control++) = MakeControlBlock(NULL, 0);
+  *control++ = MakeControlBlock(NULL, 0);
 }
 
 static void __not_in_flash_func(RestartVideo)() {
@@ -201,7 +215,7 @@ static void __not_in_flash_func(LineISR)() {
   ++g_current_line;
 }
 
-void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, LineRenderer renderer) {
+void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertical_repetitions, VideoLineRenderer renderer) {
   g_current_line = 0;
   g_line_renderer = renderer;
   g_line_width = timing->horizontal.display_pixels / horizontal_repetitions;
@@ -224,7 +238,7 @@ void InitVideo(const VideoTiming* timing, int horizontal_repetitions, int vertic
   channel_config_set_chain_to(&dma_cfg, g_dma_ctrl_chan);
   channel_config_set_irq_quiet(&dma_cfg, true);
 
-    // read address and transfer count set by control channel.
+  // read address and transfer count set by control channel.
   dma_channel_configure(g_dma_data_chan, &dma_cfg, &PIO->txf[0], NULL, 0, false);
 
   dma_cfg = dma_channel_get_default_config(g_dma_ctrl_chan);
