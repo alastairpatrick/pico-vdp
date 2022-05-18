@@ -35,6 +35,7 @@ void InitVRAMTest(int bpp, int width) {
   int rgb = 0;
   int width_words = width * bpp / 32;
 
+  uint32_t solid = 0;
   switch (bpp) {
     case 2:
       while (dest < g_vram + count_of(g_vram)) {
@@ -42,8 +43,9 @@ void InitVRAMTest(int bpp, int width) {
           *dest++ = 0b11100100111001001110010011100100;
         }
         for (int i = 0; i < width_words; ++i) {
-          *dest++ = 0;
+          *dest++ = solid;
         }
+        solid = ~solid;
       }
       break;
     case 4:
@@ -53,9 +55,10 @@ void InitVRAMTest(int bpp, int width) {
           *dest++ = 0xFEDCBA98;
         }
         for (int i = 0; i < width_words/2; ++i) {
-          *dest++ = 0;
-          *dest++ = 0;
+          *dest++ = solid;
+          *dest++ = solid;
         }
+        solid = ~solid;
       }
       break;
     case 8:
