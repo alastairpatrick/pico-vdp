@@ -121,16 +121,16 @@ static void InitControlBlocks(const VideoTiming* timing, int horz_shift, int ver
 
   int front_shifted = horz->front_porch_pixels >> horz_shift;
   uint32_t fporch_cmd = MakeCmd(front_shifted - 4, false, false, false, video_offset_handle_non_display);
-  uint32_t fporchi_cmd = MakeCmd(front_shifted - 4, false, false, true /* raise_irq */, video_offset_handle_non_display);
-  uint32_t fporchv_cmd = MakeCmd(front_shifted - 4, false, true /* vsync */, false, video_offset_handle_non_display);
+  uint32_t fporch_irq_cmd = MakeCmd(front_shifted - 4, false, false, true /* raise_irq */, video_offset_handle_non_display);
+  uint32_t fporch_vsync_cmd = MakeCmd(front_shifted - 4, false, true /* vsync */, false, video_offset_handle_non_display);
 
   int sync_shifted = horz->sync_pixels >> horz_shift;
   uint32_t hsync_cmd = MakeCmd(sync_shifted - 2, true /* hsync */, false, false, video_offset_handle_non_display);
-  uint32_t hsyncv_cmd = MakeCmd(sync_shifted - 2, true /* hsync */, true /* vsync */, false, video_offset_handle_non_display);
+  uint32_t hsync_vsync_cmd = MakeCmd(sync_shifted - 2, true /* hsync */, true /* vsync */, false, video_offset_handle_non_display);
 
   int back_shifted = horz->back_porch_pixels >> horz_shift;
   uint32_t bporch_cmd = MakeCmd(back_shifted - 3, false, false, false, video_offset_handle_non_display);
-  uint32_t bporchv_cmd = MakeCmd(back_shifted - 3, false, true /* vsync */, false, video_offset_handle_non_display);
+  uint32_t bporch_vsync_cmd = MakeCmd(back_shifted - 3, false, true /* vsync */, false, video_offset_handle_non_display);
 
   static uint32_t display_cmds[1];
   display_cmds[0] = display_cmd;
@@ -143,15 +143,15 @@ static void InitControlBlocks(const VideoTiming* timing, int horz_shift, int ver
 
   static uint32_t vporch_irq_cmds[4];
   vporch_irq_cmds[0] = vporch_cmd;
-  vporch_irq_cmds[1] = fporchi_cmd;
+  vporch_irq_cmds[1] = fporch_irq_cmd;
   vporch_irq_cmds[2] = hsync_cmd;
   vporch_irq_cmds[3] = bporch_cmd;
 
   static uint32_t vporch_vsync_cmds[4];
   vporch_vsync_cmds[0] = vsync_cmd;
-  vporch_vsync_cmds[1] = fporchv_cmd;
-  vporch_vsync_cmds[2] = hsyncv_cmd;
-  vporch_vsync_cmds[3] = bporchv_cmd;
+  vporch_vsync_cmds[1] = fporch_vsync_cmd;
+  vporch_vsync_cmds[2] = hsync_vsync_cmd;
+  vporch_vsync_cmds[3] = bporch_vsync_cmd;
 
   static uint32_t hporch_cmds[3];
   hporch_cmds[0] = fporch_cmd;
@@ -159,7 +159,7 @@ static void InitControlBlocks(const VideoTiming* timing, int horz_shift, int ver
   hporch_cmds[2] = bporch_cmd;
 
   static uint32_t hporch_irq_cmds[3];
-  hporch_irq_cmds[0] = fporchi_cmd;
+  hporch_irq_cmds[0] = fporch_irq_cmd;
   hporch_irq_cmds[1] = hsync_cmd;
   hporch_irq_cmds[2] = bporch_cmd;
 
