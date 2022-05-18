@@ -20,7 +20,7 @@ PUBLIC entry:
   OUT PC, 5       // 3 
   
 % c-sdk {
-static inline void video_program_init(PIO pio, uint sm, uint offset, uint rgb_pins, uint sync_pins, int pio_clk_div) {
+static inline void video_program_init(PIO pio, uint sm, uint offset, uint rgb_pins, uint sync_pins) {
   const int NUM_RGB_PINS = 8;
   for (int i = 0; i < NUM_RGB_PINS; ++i) {
      pio_gpio_init(pio, rgb_pins + i);
@@ -39,7 +39,6 @@ static inline void video_program_init(PIO pio, uint sm, uint offset, uint rgb_pi
   sm_config_set_out_shift(&c, true /*right shift*/, true /*auto-pull*/, 32);
   sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 	pio_sm_init(pio, sm, video_offset_entry, &c);
-  pio_sm_set_clkdiv_int_frac(pio, 0, pio_clk_div >> 8, pio_clk_div & 0xFF);
 	pio_sm_set_enabled(pio, sm, true);
 }
 %}

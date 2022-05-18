@@ -6,11 +6,12 @@
 
 #include "mode.h"
 #include "pins.h"
+#include "section.h"
 #include "sys80.h"
 #include "sys80_test.h"
 #include "video.h"
 
-void __not_in_flash_func(BlinkLoop)() {
+void INTERNAL_SECTION BlinkLoop() {
   gpio_init(LED_PIN);
   gpio_set_dir(LED_PIN, GPIO_OUT);
   for (;;) {
@@ -25,7 +26,7 @@ void TestVideo() {
 
   const int bpp = 4;  // set to 2, 4 or 8
 
-  VideoLineRenderer renderer = NULL;
+  VideoRenderer renderer = NULL;
   switch (bpp) {
     case 2:
       renderer = RenderLine4;
@@ -40,16 +41,20 @@ void TestVideo() {
       assert(false);
   }
 
-  InitVRAMTest(bpp);
+  const VideoTiming* timing = &g_timing1024_768;
+  const int horz_shift = 1;
+  const int vert_shift = 1;
+
+  InitVRAMTest(bpp, timing->horz.display_pixels >> horz_shift);
 
   // If it flickers or doesn't sync, it might mean the CPU can't keep up. Try lower res.
   // 256 color mode is actually the least expensive. 16 color mode is the most expensive and
   // most likely to flicker at high resolution. 4 color mode is slighely less expensive
   // than 16 color.
-  InitVideo(
-    &g_timing640_480,  // g_timing640_480, g_timing800_600 or g_timing1024_768
-    1, 1,
-    renderer);
+  InitVideo(timing);
+  SetVideoResolution(horz_shift, vert_shift);
+  SetVideoRenderer(renderer);
+  StartVideo();
 }
 
 int main() {

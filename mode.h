@@ -1,7 +1,7 @@
 #ifndef MODES_H
 #define MODES_H
 
-void InitVRAMTest();
+void InitVRAMTest(int bpp, int width);
 
 void RenderLine4(uint32_t* dest, int line, int width);
 void RenderLine16(uint32_t* dest, int line, int width);

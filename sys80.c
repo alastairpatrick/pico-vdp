@@ -2,12 +2,13 @@
 #include "hardware/pio.h"
 
 #include "pins.h"
+#include "section.h"
 #include "sys80.h"
 
 #include "sys80.pio.h"
 
-uint8_t g_registers[256] __attribute__ ((aligned(256)));                    // Read/written via port #1
-static uint32_t g_dummy;
+uint8_t DMA_SECTION g_registers[256] __attribute__ ((aligned(256)));                    // Read/written via port #1
+static DMA_SECTION uint32_t g_dummy;
 
 static uint g_read_addr_channel;
 static uint g_write_addr_channel;

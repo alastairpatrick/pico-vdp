@@ -5,6 +5,8 @@
 
 #include "video.h"
 
+#include "section.h"
+
 uint32_t g_vram[128 * 1024 / 4];
 
 uint8_t g_palette[16] = {
@@ -28,20 +30,32 @@ uint8_t g_palette[16] = {
   0b11000000,
 };
 
-void InitVRAMTest(int bpp) {
+void InitVRAMTest(int bpp, int width) {
   uint32_t* dest = g_vram;
   int rgb = 0;
+  int width_words = width * bpp / 32;
 
   switch (bpp) {
     case 2:
       while (dest < g_vram + count_of(g_vram)) {
-        *dest++ = 0b11100100111001001110010011100100;
+        for (int i = 0; i < width_words; ++i) {
+          *dest++ = 0b11100100111001001110010011100100;
+        }
+        for (int i = 0; i < width_words; ++i) {
+          *dest++ = 0;
+        }
       }
       break;
     case 4:
       while (dest < g_vram + count_of(g_vram)) {
-        *dest++ = 0x76543210;
-        *dest++ = 0xFEDCBA98;
+        for (int i = 0; i < width_words/2; ++i) {
+          *dest++ = 0x76543210;
+          *dest++ = 0xFEDCBA98;
+        }
+        for (int i = 0; i < width_words/2; ++i) {
+          *dest++ = 0;
+          *dest++ = 0;
+        }
       }
       break;
     case 8:
@@ -55,7 +69,7 @@ void InitVRAMTest(int bpp) {
   }
 }
 
-void __not_in_flash_func(RenderLine4)(uint32_t* dest, int line, int width) {
+void RENDER_INNER_SECTION RenderLine4(uint32_t* dest, int line, int width) {
   uint32_t* source = g_vram + line * width / sizeof(g_vram[0]) / 4;
 
   for (int x = 0; x < width/16; ++x) {
@@ -83,7 +97,7 @@ void __not_in_flash_func(RenderLine4)(uint32_t* dest, int line, int width) {
   }
 }
 
-void __not_in_flash_func(RenderLine16)(uint32_t* dest, int line, int width) {
+void RENDER_INNER_SECTION RenderLine16(uint32_t* dest, int line, int width) {
   uint32_t* source = g_vram + line * width / sizeof(g_vram[0]) / 2;
 
   for (int x = 0; x < width/8; ++x) {
@@ -101,7 +115,7 @@ void __not_in_flash_func(RenderLine16)(uint32_t* dest, int line, int width) {
   }
 }
 
-void __not_in_flash_func(RenderLine256)(uint32_t* dest, int line, int width) {
+void RENDER_INNER_SECTION RenderLine256(uint32_t* dest, int line, int width) {
   uint32_t* source = g_vram + line * width / sizeof(g_vram[0]);
 
   for (int x = 0; x < width/4; ++x) {

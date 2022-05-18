@@ -20,12 +20,15 @@ typedef struct {
   VideoAxisTiming vert;
 } VideoTiming;
 
-typedef void (*VideoLineRenderer)(uint32_t* dest, int y, int width);
+typedef void (*VideoRenderer)(uint32_t* dest, int y, int width);
 
 extern const VideoTiming g_timing640_480;
 extern const VideoTiming g_timing800_600;
 extern const VideoTiming g_timing1024_768;
 
-void InitVideo(const VideoTiming* timing, int horz_shift, int vert_shift, VideoLineRenderer renderer);
+void InitVideo(const VideoTiming* timing);
+void SetVideoResolution(int horz_shift, int vert_shift);
+void SetVideoRenderer(VideoRenderer renderer);
+void StartVideo();
 
 #endif  // VIDEO_H
