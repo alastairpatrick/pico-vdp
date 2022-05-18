@@ -56,8 +56,8 @@ static uint32_t g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_RES / 4];  
 static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 3];
 static int g_dma_data_chan, g_dma_ctrl_chan;
 
-static int g_current_line;
-static int g_line_width;
+static int g_logical_y;
+static int g_logical_width;
 static VideoLineRenderer g_line_renderer;
 
 static DMAControlBlock MakeControlBlock(uint32_t* read_addr, int transfer_count) {
@@ -198,7 +198,7 @@ static void InitControlBlocks(const VideoTiming* timing, int horz_shift, int ver
 }
 
 static void __not_in_flash_func(RestartVideo)() {
-  g_current_line = 0;
+  g_logical_y = 0;
   dma_channel_set_read_addr(g_dma_ctrl_chan, g_dma_control_blocks, true);
 }
 
@@ -211,14 +211,14 @@ static void __not_in_flash_func(FrameISR)() {
 
 static void __not_in_flash_func(LineISR)() {
   pio_interrupt_clear(PIO, 0);
-  g_line_renderer(g_display_lines[g_current_line & 1], g_current_line, g_line_width);
-  ++g_current_line;
+  g_line_renderer(g_display_lines[g_logical_y & 1], g_logical_y, g_logical_width);
+  ++g_logical_y;
 }
 
 void InitVideo(const VideoTiming* timing, int horz_shift, int vert_shift, VideoLineRenderer renderer) {
-  g_current_line = 0;
+  g_logical_y = 0;
+  g_logical_width = timing->horz.display_pixels >> horz_shift;
   g_line_renderer = renderer;
-  g_line_width = timing->horz.display_pixels >> horz_shift;
 
   set_sys_clock_pll(timing->vco_freq, timing->vco_div1, timing->vco_div2);
 
