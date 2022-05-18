@@ -4,8 +4,8 @@
 #include "hardware/structs/bus_ctrl.h"
 #include "hardware/structs/syscfg.h"
 
-#include "mode.h"
 #include "pins.h"
+#include "scan_out.h"
 #include "section.h"
 #include "sys80.h"
 #include "sys80_test.h"

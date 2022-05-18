@@ -3,9 +3,10 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
+#include "section.h"
 #include "video.h"
 
-#include "section.h"
+#include "scan_out.h"
 
 uint32_t g_vram[128 * 1024 / 4];
 

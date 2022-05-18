@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_executable(pico-vdp
-  mode.c
+  scan_out.c
   sys80.c
   sys80_test.c
   test.c
