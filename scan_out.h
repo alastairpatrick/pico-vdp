@@ -14,6 +14,7 @@ typedef enum {
 
 int GetDisplayModeBPP(DisplayMode mode);
 void InitScanOutTest(DisplayMode mode, int width, int height);
-void ScanOut(uint8_t* dest, int y, int width);
+void ScanOutReset();
+void ScanOutLine(uint8_t* dest, int y, int width);
 
 #endif  // SCAN_OUT_H

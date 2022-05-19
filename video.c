@@ -216,6 +216,7 @@ static void InitControlBlocks() {
 
 void STRIPED_SECTION StartVideo() {
   g_logical_y = 0;
+  ScanOutReset();
   dma_channel_set_read_addr(g_dma_ctrl_chan, g_dma_control_blocks, true);
 }
 
@@ -228,7 +229,7 @@ static void STRIPED_SECTION FrameISR() {
 
 static void STRIPED_SECTION LineISR() {
   pio_interrupt_clear(PIO, 0);
-  ScanOut(g_display_lines[g_logical_y & 1], g_logical_y, g_logical_width);
+  ScanOutLine(g_display_lines[g_logical_y & 1], g_logical_y, g_logical_width);
   ++g_logical_y;
 }
 
