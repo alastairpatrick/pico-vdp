@@ -10,6 +10,7 @@
 #include "hardware/pll.h"
 
 #include "pins.h"
+#include "scan_out.h"
 #include "section.h"
 
 #include "video.h"
@@ -55,16 +56,17 @@ const VideoTiming g_timing1024_768 = {
 static VideoTiming g_timing;
 static int g_horz_shift, g_vert_shift;
 
-static uint32_t DMA_SECTION g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_RES / 4];  // double buffered
+// double buffered
+// +16 to accomodate overrun caused by x-shift
+static uint8_t DMA_SECTION g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_RES + 16];
 
 static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 3];
 static int g_dma_data_chan, g_dma_ctrl_chan;
 
 static int g_logical_y;
 static int g_logical_width;
-static VideoRenderer g_renderer;
 
-static DMAControlBlock MakeControlBlock(uint32_t* read_addr, int transfer_count) {
+static DMAControlBlock MakeControlBlock(void* read_addr, int transfer_count) {
   DMAControlBlock result = {
     .read_addr = read_addr,
     .transfer_count = transfer_count
@@ -192,6 +194,7 @@ static void InitControlBlocks() {
 
       if (i == (vert_reps-1) && (irq_count < irq_total)) {
         *control++ = MakeControlBlock(hporch_irq_cmds, count_of(hporch_cmds));
+        ++irq_count;
       } else {
         *control++ = MakeControlBlock(hporch_cmds, count_of(hporch_cmds));
       }
@@ -211,21 +214,21 @@ static void InitControlBlocks() {
   *control++ = MakeControlBlock(NULL, 0);
 }
 
-void INTERNAL_SECTION StartVideo() {
+void STRIPED_SECTION StartVideo() {
   g_logical_y = 0;
   dma_channel_set_read_addr(g_dma_ctrl_chan, g_dma_control_blocks, true);
 }
 
-static void INTERNAL_SECTION FrameISR() {
+static void STRIPED_SECTION FrameISR() {
   if (dma_irqn_get_channel_status(DMA_IRQ_IDX, g_dma_data_chan)) {
     dma_irqn_acknowledge_channel(DMA_IRQ_IDX, g_dma_data_chan);
     StartVideo();
   }
 }
 
-static void INTERNAL_SECTION LineISR() {
+static void STRIPED_SECTION LineISR() {
   pio_interrupt_clear(PIO, 0);
-  g_renderer(g_display_lines[g_logical_y & 1], g_logical_y, g_logical_width);
+  ScanOut(g_display_lines[g_logical_y & 1], g_logical_y, g_logical_width);
   ++g_logical_y;
 }
 
@@ -275,8 +278,4 @@ void SetVideoResolution(int horz_shift, int vert_shift) {
   pio_sm_set_clkdiv_int_frac(PIO, 0, pio_clk_div >> 8, pio_clk_div & 0xFF);
 
   InitControlBlocks();
-}
-
-void SetVideoRenderer(VideoRenderer renderer) {
-  g_renderer = renderer;
 }

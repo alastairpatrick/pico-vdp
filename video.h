@@ -28,7 +28,6 @@ extern const VideoTiming g_timing1024_768;
 
 void InitVideo(const VideoTiming* timing);
 void SetVideoResolution(int horz_shift, int vert_shift);
-void SetVideoRenderer(VideoRenderer renderer);
 void StartVideo();
 
 #endif  // VIDEO_H

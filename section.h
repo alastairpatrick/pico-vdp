@@ -1,8 +1,9 @@
 #ifndef SECTION_H
 #define SECTION_H
 
-#define INTERNAL_SECTION __not_in_flash("Striped")
+#define STRIPED_SECTION __not_in_flash("Striped")
 #define DMA_SECTION __not_in_flash("DMA")
-#define RENDER_INNER_SECTION __not_in_flash("RenderInner")
+#define SCAN_OUT_INNER_SECTION __not_in_flash("ScanOutInner")
+#define SCAN_OUT_DATA_SECTION __scratch_y("ScanOutData")
 
 #endif  // SECTION_H
