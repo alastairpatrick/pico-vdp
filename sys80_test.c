@@ -61,7 +61,7 @@ void TestSys80() {
 
   // Test reading register 0 through port #1
   for (int i = 0; i < 256; ++i) {
-    g_registers[0] = i;
+    g_sys80_regs.bytes[0] = i;
     int actual = SimulateIORead(RDAT);
     assert(actual == i);
   }
@@ -69,7 +69,7 @@ void TestSys80() {
   // Test writing register 0 through port #1.
   for (int i = 0; i < 256; ++i) {
     SimulateIOWrite(RDAT, i);
-    assert(g_registers[0] == i);
+    assert(g_sys80_regs.bytes[0] == i);
   }
 
   // Test reading and writing selected register through port #0
@@ -82,7 +82,7 @@ void TestSys80() {
   // Test selecting and reading registers.
   for (int i = 0; i < 256; ++i) {
     SimulateIOWrite(RSEL, i);
-    g_registers[i] = i;
+    g_sys80_regs.bytes[i] = i;
     int actual = SimulateIORead(RDAT);
     assert(actual == i);
   }
@@ -90,19 +90,19 @@ void TestSys80() {
   // Test selecting and writing read/write registers.
   for (int i = 0; i < 128; ++i) {
     SimulateIOWrite(RSEL, i);
-    g_registers[i] = 7;
+    g_sys80_regs.bytes[i] = 7;
     SimulateIOWrite(RDAT, i);
-    assert(g_registers[i] == i);
+    assert(g_sys80_regs.bytes[i] == i);
   }
 
   // Test selecting and writing read-only registers.
   for (int i = 128; i < 256; ++i) {
     SimulateIOWrite(RSEL, i);
-    g_registers[i] = 7;
-    g_registers[i-128] = 7;
+    g_sys80_regs.bytes[i] = 7;
+    g_sys80_regs.bytes[i-128] = 7;
     SimulateIOWrite(RDAT, i);
-    assert(g_registers[i - 128] == i);
-    assert(g_registers[i] == 7);
+    assert(g_sys80_regs.bytes[i - 128] == i);
+    assert(g_sys80_regs.bytes[i] == 7);
   }
 
 

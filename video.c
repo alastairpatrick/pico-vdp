@@ -19,6 +19,7 @@
 #define MAX_HORZ_DISPLAY_RES 1024
 #define MAX_VERT_RES 806
 #define DISPLAY_LINE_COUNT 2
+#define DISPLAY_GUARD 16
 
 #define DMA_IRQ_IDX 0
 #define PIO pio0
@@ -57,8 +58,7 @@ static VideoTiming g_timing;
 static int g_horz_shift, g_vert_shift;
 
 // double buffered
-// +16 to accomodate overrun caused by x-shift
-static uint8_t DMA_SECTION g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_RES + 16];
+static uint8_t DMA_SECTION g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_RES + 2*DISPLAY_GUARD];
 
 static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 3];
 static int g_dma_data_chan, g_dma_ctrl_chan;
@@ -190,7 +190,7 @@ static void InitControlBlocks() {
   for (int y = 0; y < vert->display_pixels; y += vert_reps) {
     for (int i = 0; i < vert_reps; ++i) {
       *control++ = MakeControlBlock(display_cmds, count_of(display_cmds));
-      *control++ = MakeControlBlock(g_display_lines[display_line_idx], display_line_size);
+      *control++ = MakeControlBlock(g_display_lines[display_line_idx] + DISPLAY_GUARD, display_line_size);
 
       if (i == (vert_reps-1) && (irq_count < irq_total)) {
         *control++ = MakeControlBlock(hporch_irq_cmds, count_of(hporch_cmds));
@@ -229,7 +229,7 @@ static void STRIPED_SECTION FrameISR() {
 
 static void STRIPED_SECTION LineISR() {
   pio_interrupt_clear(PIO, 0);
-  ScanOutLine(g_display_lines[g_logical_y & 1], g_logical_y, g_logical_width);
+  ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, g_logical_width);
   ++g_logical_y;
 }
 

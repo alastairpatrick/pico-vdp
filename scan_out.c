@@ -5,12 +5,17 @@
 #include "pico/stdlib.h"
 
 #include "section.h"
+#include "sys80.h"
 #include "video.h"
 
 #include "scan_out.h"
 
 #define DISPLAY_BANK_SIZE (32 * 1024 / sizeof(uint32_t))
 #define AWFUL_MAGENTA 0xC7
+
+typedef struct {
+  int8_t x_shift: 4;
+} ScanRegisters;
 
 typedef struct {
   // WORD #0
@@ -25,29 +30,36 @@ typedef struct {
 
   // WORD #1
 
+  bool pixels_addr_en: 1;
+  bool display_mode_en: 1;
+  DisplayMode display_mode: 3;
+  uint8_t reserved3: 3;
+
   // Which color-quads in palette to update on this scanline.
   uint8_t palette_mask: 4;
   uint8_t reserved2: 4;
 
-  bool pixels_addr_en: 1;
-  DisplayMode display_mode: 3;
-  uint8_t reserved3: 4;
-
-  bool x_shift_en: 1;
-  uint8_t x_shift: 3;
-  uint8_t reserved4: 4;
+  int8_t x_shift: 4;
+  int8_t reserved4: 5;
 
   uint8_t reserved5: 8;
 } ScanLine;
 
 typedef union {
-  ScanLine lines[192];
+  struct {
+    ScanRegisters regs;
+    ScanLine lines[192];
+  };
   uint32_t words[DISPLAY_BANK_SIZE];
 } DisplayBank;
 
 DisplayBank g_display_bank_a;
 DisplayBank g_display_bank_b;
 DisplayBank* g_scan_bank = &g_display_bank_a;
+
+static ScanRegisters g_scan_regs;
+static int g_pixels_addr;
+static DisplayMode g_display_mode;
 
 static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000000,
@@ -68,8 +80,6 @@ static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000100,
   0b00000110,
 };
-
-static int g_pixels_addr;
 
 const uint32_t* SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
   for (int x = 0; x < width; ++x) {
@@ -144,6 +154,21 @@ const uint32_t* SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, const uint3
 }
 
 void STRIPED_SECTION ScanOutReset() {
+  g_scan_regs = g_scan_bank->regs;
+
+  // TODO: this is just for testing.
+  static int count;
+  static int dir = 1;
+  if (count == 0) {
+    if (g_scan_bank->regs.x_shift == 7) {
+      dir = -1;
+    }
+    if (g_scan_bank->regs.x_shift == -8) {
+      dir = 1;
+    }
+    g_scan_bank->regs.x_shift += dir;
+  }
+  count = (count+1) % 5;
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
@@ -162,38 +187,47 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
     g_pixels_addr = line->pixels_addr;
   }
 
-  const uint32_t* source = g_scan_bank->words + g_pixels_addr;
-
-  int x_shift = line->x_shift_en ? line->x_shift : 0;
-  for (int i = 0; i < x_shift; ++i) {
-    *dest++ = g_palette[0];
+  if (line->display_mode_en) {
+    g_display_mode = line->display_mode;
   }
 
-  switch (line->display_mode) {
+  bool border_left = g_sys80_regs.border_left * 2;
+  bool border_right = g_sys80_regs.border_left * 2;
+  uint8_t border_rgb = g_sys80_regs.border_rgb;
+
+  int x_shift = g_scan_regs.x_shift + line->x_shift;
+
+  const uint32_t* source = g_scan_bank->words + g_pixels_addr;
+  switch (g_display_mode) {
     case DISPLAY_MODE_DISABLED:
-      ScanOutSolid(dest, width, g_palette[0]);
+      ScanOutSolid(dest + x_shift, width, g_palette[0]);
       break;
     case DISPLAY_MODE_HIRES_2:
-      source = ScanOutHires2(dest, source, width);
+      source = ScanOutHires2(dest + x_shift, source, width);
       break;
     case DISPLAY_MODE_HIRES_4:
-      source = ScanOutHires4(dest, source, width);
+      source = ScanOutHires4(dest + x_shift, source, width);
       break;
     case DISPLAY_MODE_LORES_2:
-      source = ScanOutLores2(dest, source, width);
+      source = ScanOutLores2(dest + x_shift, source, width);
       break;
     case DISPLAY_MODE_LORES_4:
-      source = ScanOutLores4(dest, source, width);
+      source = ScanOutLores4(dest + x_shift, source, width);
       break;
     case DISPLAY_MODE_LORES_16:
-      source = ScanOutLores16(dest, source, width);
+      source = ScanOutLores16(dest + x_shift, source, width);
       break;
     default:
-      source = ScanOutSolid(dest, width, AWFUL_MAGENTA);
+      source = ScanOutSolid(dest + x_shift, width, AWFUL_MAGENTA);
       break;
   }
-
   g_pixels_addr = source - g_scan_bank->words;
+
+  memset(dest + x_shift, g_palette[0], 8);
+  memset(dest + width + x_shift - 8, g_palette[0], 8);
+
+  memset(dest, border_rgb, border_left);
+  memset(dest + width - border_right, border_rgb, border_right);
 }
 
 void PutPixel(int x, int y, int color) {
@@ -254,7 +288,7 @@ int GetDisplayModeBPP(DisplayMode mode) {
 }
 
 void InitScanOutTest(DisplayMode mode, int width, int height) {
-  const static int x_shifts[8] = { 0, 2, 4, 6, 7, 6, 4, 2 };
+  g_scan_bank->regs.x_shift = 0;
 
   if (mode >= DISPLAY_MODE_LORES_2) {
     width /= 2;
@@ -268,10 +302,10 @@ void InitScanOutTest(DisplayMode mode, int width, int height) {
     ScanLine* line = g_scan_bank->lines + y;
     line->palette_mask = 0;
     line->display_mode = mode;
+    line->display_mode_en = true;
     line->pixels_addr = pixels_addr;
     line->pixels_addr_en = true;
-    line->x_shift = x_shifts[y & 0x7];
-    line->x_shift_en = true;
+    line->x_shift = ~y;
     pixels_addr += width_words;
   }
 
@@ -297,5 +331,6 @@ void InitScanOutTest(DisplayMode mode, int width, int height) {
     ScanLine* line = g_scan_bank->lines + y;
     line->pixels_addr = 0;
     line->pixels_addr_en = false;
+    line->display_mode_en = false;
   }
 }

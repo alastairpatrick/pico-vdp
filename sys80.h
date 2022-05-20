@@ -5,7 +5,17 @@
 
 #define SYS80_PIO pio1
 
-extern uint8_t g_registers[256];
+typedef union {
+  struct {
+    uint8_t dummy[32];
+    uint8_t border_rgb;
+    uint8_t border_left: 4;
+    uint8_t border_right: 4;
+  };
+  uint8_t bytes[256];
+} Sys80Registers;
+
+extern volatile Sys80Registers g_sys80_regs;
 
 void InitSys80();
 
