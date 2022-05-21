@@ -61,10 +61,18 @@ typedef union {
 
 static_assert(sizeof(DisplayBank) == DISPLAY_BANK_SIZE * sizeof(uint32_t));
 
-extern DisplayBank* g_blit_bank;
+typedef enum {
+  SWAP_SINGLE,
+  SWAP_DOUBLE,
+} SwapMode;
+
+DisplayBank* GetBlitBank();
+void SwapBanks(SwapMode mode);
 
 int GetDisplayModeBPP(DisplayMode mode);
+
 void InitScanOutTest(DisplayMode mode, int width, int height);
+
 void ScanOutReset();
 void ScanOutLine(uint8_t* dest, int y, int width);
 

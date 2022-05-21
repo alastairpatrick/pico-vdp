@@ -14,8 +14,11 @@
 
 static DisplayBank g_display_bank_a;
 static DisplayBank g_display_bank_b;
+static int g_scan_bank_idx;
 static DisplayBank* g_scan_bank = &g_display_bank_a;
-DisplayBank* g_blit_bank = &g_display_bank_a;  // TODO: should point to the bank that is not the scan bank
+static volatile DisplayBank* g_blit_bank = &g_display_bank_a;
+static volatile bool g_swap_pending;
+static volatile SwapMode g_swap_mode;
 
 static ScanRegisters g_scan_regs;
 static int g_pixels_addr;
@@ -41,28 +44,42 @@ static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000110,
 };
 
-const uint32_t* SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
+DisplayBank* GetBlitBank() {
+  return g_blit_bank;
+}
+
+void SwapBanks(SwapMode mode) {
+  g_swap_mode = mode;
+  g_swap_pending = true;
+  while (g_swap_pending);
+}
+
+void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
   for (int x = 0; x < width; ++x) {
     *dest++ = rgb;
   }
 }
 
-const uint32_t* SCAN_OUT_INNER_SECTION ScanOutLores2(uint8_t* dest, const uint32_t* source, int width) {
+static inline uint32_t ReadPixelData() {
+  uint32_t data = g_scan_bank->words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+  ++g_pixels_addr;
+  return data;
+}
+
+static void SCAN_OUT_INNER_SECTION ScanOutLores2(uint8_t* dest, int width) {
   for (int x = 0; x < width/64; ++x) {
-    uint32_t indices32 = *source++;
+    uint32_t indices32 = ReadPixelData();
 
     for (int i = 0; i < 32; ++i) {
       *dest++ = *dest++ = g_palette[indices32 & 0x1];
       indices32 >>= 1;
     }
   }
-
-  return source;
 }
 
-const uint32_t* SCAN_OUT_INNER_SECTION ScanOutHires2(uint8_t* dest, const uint32_t* source, int width) {
+static void SCAN_OUT_INNER_SECTION ScanOutHires2(uint8_t* dest, int width) {
   for (int x = 0; x < width/32; ++x) {
-    uint32_t indices32 = *source++;
+    uint32_t indices32 = ReadPixelData();
 
     #pragma GCC unroll 4
     for (int i = 0; i < 32; ++i) {
@@ -70,52 +87,52 @@ const uint32_t* SCAN_OUT_INNER_SECTION ScanOutHires2(uint8_t* dest, const uint32
       indices32 >>= 1;
     }
   }
-
-  return source;
 }
 
-const uint32_t* SCAN_OUT_INNER_SECTION ScanOutLores4(uint8_t* dest, const uint32_t* source, int width) {
+static void SCAN_OUT_INNER_SECTION ScanOutLores4(uint8_t* dest, int width) {
   for (int x = 0; x < width/32; ++x) {
-    uint32_t indices16 = *source++;
+    uint32_t indices16 = ReadPixelData();
 
     for (int i = 0; i < 16; ++i) {
       *dest++ = *dest++ = g_palette[indices16 & 0x3];
       indices16 >>= 2;
     }
   }
-
-  return source;
 }
 
-const uint32_t* SCAN_OUT_INNER_SECTION ScanOutHires4(uint8_t* dest, const uint32_t* source, int width) {
+static void SCAN_OUT_INNER_SECTION ScanOutHires4(uint8_t* dest, int width) {
   for (int x = 0; x < width/16; ++x) {
-    uint32_t indices16 = *source++;
+    uint32_t indices16 = ReadPixelData();
 
     for (int i = 0; i < 16; ++i) {
       *dest++ = g_palette[indices16 & 0x3];
       indices16 >>= 2;
     }
   }
-
-  return source;
 }
 
-const uint32_t* SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, const uint32_t* source, int width) {
+static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
   for (int x = 0; x < width/16; ++x) {
-    uint32_t indices8 = *source++;
+    uint32_t indices8 = ReadPixelData();
 
     for (int i = 0; i < 8; ++i) {
       *dest++ = *dest++ = g_palette[indices8 & 0xF];
       indices8 >>= 4;
     }
   }
-
-  return source;
 }
 
 void STRIPED_SECTION ScanOutReset() {
-  g_scan_regs = g_scan_bank->regs;
+  if (g_swap_pending) {
+    g_scan_bank = g_blit_bank;
 
+    if (g_swap_mode == SWAP_DOUBLE) {
+      g_blit_bank = g_scan_bank == &g_display_bank_a ? &g_display_bank_b : &g_display_bank_a;
+    }
+
+    g_swap_pending = false;
+  }
+  
   // TODO: this is just for testing.
   static int count;
   static int dir = 1;
@@ -129,6 +146,8 @@ void STRIPED_SECTION ScanOutReset() {
     g_scan_bank->regs.x_shift += dir;
   }
   count = (count+1) % 5;
+
+  g_scan_regs = g_scan_bank->regs;
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
@@ -157,31 +176,29 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 
   int x_shift = g_scan_regs.x_shift + line->x_shift;
 
-  const uint32_t* source = g_scan_bank->words + g_pixels_addr;
   switch (g_display_mode) {
     case DISPLAY_MODE_DISABLED:
       ScanOutSolid(dest + x_shift, width, g_palette[0]);
       break;
     case DISPLAY_MODE_HIRES_2:
-      source = ScanOutHires2(dest + x_shift, source, width);
+      ScanOutHires2(dest + x_shift, width);
       break;
     case DISPLAY_MODE_HIRES_4:
-      source = ScanOutHires4(dest + x_shift, source, width);
+      ScanOutHires4(dest + x_shift, width);
       break;
     case DISPLAY_MODE_LORES_2:
-      source = ScanOutLores2(dest + x_shift, source, width);
+      ScanOutLores2(dest + x_shift, width);
       break;
     case DISPLAY_MODE_LORES_4:
-      source = ScanOutLores4(dest + x_shift, source, width);
+      ScanOutLores4(dest + x_shift, width);
       break;
     case DISPLAY_MODE_LORES_16:
-      source = ScanOutLores16(dest + x_shift, source, width);
+      ScanOutLores16(dest + x_shift, width);
       break;
     default:
-      source = ScanOutSolid(dest + x_shift, width, AWFUL_MAGENTA);
+      ScanOutSolid(dest + x_shift, width, AWFUL_MAGENTA);
       break;
   }
-  g_pixels_addr = source - g_scan_bank->words;
 
   for (int i = 0; i < x_shift; ++i) {
     dest[i] = g_palette[0];

@@ -19,6 +19,7 @@ typedef enum {
   OPCODE_SET5,
   OPCODE_SET6,
   OPCODE_SET7,
+  OPCODE_SWAP       = 16,
   OPCODE_NOP        = 0b011111,
 
   OPCODE_SETN,
@@ -42,6 +43,7 @@ typedef struct {
 
 static_assert(sizeof(LongCommand) == 4);
 
+static DisplayBank* g_blit_bank;
 static int16_t g_blit_regs[NUM_BLIT_REGS];
 static uint32_t g_local_bank[LOCAL_BANK_SIZE];
 
@@ -77,6 +79,11 @@ static void DoStream(int low8, int high16) {
   }
 }
 
+static void DoSwap(int swap_mode) {
+  SwapBanks((SwapMode) swap_mode);
+  g_blit_bank = GetBlitBank();
+}
+
 static void HandleShortCommand(int opcode, int operand) {
   switch (opcode) {
   case OPCODE_SET0:
@@ -88,6 +95,9 @@ static void HandleShortCommand(int opcode, int operand) {
   case OPCODE_SET6:
   case OPCODE_SET7:
     g_blit_regs[opcode] = operand;
+    break;
+  case OPCODE_SWAP:
+    DoSwap(operand);
     break;
   default:
     break;
@@ -108,6 +118,8 @@ static void HandleLongCommand(Opcode opcode, int s_operand, int l_operand) {
 }
 
 void BlitMain() {
+  g_blit_bank = GetBlitBank();
+
   for (;;) {
     union {
       uint32_t word;
