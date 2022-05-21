@@ -49,19 +49,31 @@ static inline int MakeAddress(int low8, int high16) {
   return (low8 & 0xFF) | ((high16 & 0xFFFF) << 8);
 }
 
-static inline void DoStream(int low8, int high16) {
-  int size = g_blit_regs[0];
-  int dest_addr = MakeAddress(low8, high16);
+static uint32_t* AccessVRAM(int addr) {
+  if (addr < DISPLAY_BANK_SIZE*2) {
+    return &g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)];
+  } else {
+    return &g_local_bank[(addr - DISPLAY_BANK_SIZE*2) & (LOCAL_BANK_SIZE-1)];
+  }
+}
+
+static uint32_t ReadVRAM(int addr) {
+  return *AccessVRAM(addr);
+}
+
+static void WriteVRAM(int addr, uint32_t data) {
+  *AccessVRAM(addr) = data;
+}
+
+static void DoStream(int low8, int high16) {
+  int size = (uint16_t) g_blit_regs[0];
+  int addr = MakeAddress(low8 & 0x3, high16);
+  int step = ((low8 >> 2) & 0xFF) + 1;
 
   for (int i = 0; i < size; ++i) {
     uint32_t data = PopFifo();
-
-    if (dest_addr < DISPLAY_BANK_SIZE*2) {
-      g_blit_bank->words[dest_addr & (DISPLAY_BANK_SIZE-1)] = data;
-    }
-    
-    g_local_bank[(dest_addr - DISPLAY_BANK_SIZE*2) & (LOCAL_BANK_SIZE-1)] = data;
-    ++dest_addr;
+    WriteVRAM(addr, data);
+    addr += step;
   }
 }
 
