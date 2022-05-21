@@ -15,16 +15,14 @@ typedef union {
   uint8_t bytes[256];
 } Sys80Registers;
 
+static_assert(sizeof(Sys80Registers) == 256);
+
 extern volatile Sys80Registers g_sys80_regs;
 
 void InitSys80();
 
-static inline bool IsCommandReady() {
-  return !pio_sm_is_rx_fifo_empty(SYS80_PIO, 3);
-}
-
-static inline uint32_t UnloadCommand() {
-  return pio_sm_get(SYS80_PIO, 3);
+static inline uint32_t PopFifo() {
+  return pio_sm_get_blocking(SYS80_PIO, 3);
 }
 
 #endif  // SYS80_H

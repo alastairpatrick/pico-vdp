@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_executable(pico-vdp
+  blit.c
   scan_out.c
   sys80.c
   sys80_test.c
@@ -25,4 +26,4 @@ pico_enable_stdio_usb(pico-vdp 1)
 pico_enable_stdio_uart(pico-vdp 1)
 pico_add_extra_outputs(pico-vdp)
 
-target_link_libraries(pico-vdp pico_stdlib hardware_dma hardware_interp hardware_pio)
+target_link_libraries(pico-vdp pico_multicore pico_stdlib hardware_dma hardware_interp hardware_pio)

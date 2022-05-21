@@ -10,52 +10,12 @@
 
 #include "scan_out.h"
 
-#define DISPLAY_BANK_SIZE (32 * 1024 / sizeof(uint32_t))
 #define AWFUL_MAGENTA 0xC7
 
-typedef struct {
-  int8_t x_shift: 4;
-} ScanRegisters;
-
-typedef struct {
-  // WORD #0
-
-  // Address/4 of palette for this scanline.
-  uint16_t palette_addr: 13;
-  int reserved0: 5;
-
-  // Address/4 of of first pixel.
-  uint16_t pixels_addr: 13;
-  int reserved1: 5;
-
-  // WORD #1
-
-  bool pixels_addr_en: 1;
-  bool display_mode_en: 1;
-  DisplayMode display_mode: 3;
-  uint8_t reserved3: 3;
-
-  // Which color-quads in palette to update on this scanline.
-  uint8_t palette_mask: 4;
-  uint8_t reserved2: 4;
-
-  int8_t x_shift: 4;
-  int8_t reserved4: 5;
-
-  uint8_t reserved5: 8;
-} ScanLine;
-
-typedef union {
-  struct {
-    ScanRegisters regs;
-    ScanLine lines[192];
-  };
-  uint32_t words[DISPLAY_BANK_SIZE];
-} DisplayBank;
-
-DisplayBank g_display_bank_a;
-DisplayBank g_display_bank_b;
-DisplayBank* g_scan_bank = &g_display_bank_a;
+static DisplayBank g_display_bank_a;
+static DisplayBank g_display_bank_b;
+static DisplayBank* g_scan_bank = &g_display_bank_a;
+DisplayBank* g_blit_bank = &g_display_bank_a;  // TODO: should point to the bank that is not the scan bank
 
 static ScanRegisters g_scan_regs;
 static int g_pixels_addr;
@@ -223,8 +183,12 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   }
   g_pixels_addr = source - g_scan_bank->words;
 
-  memset(dest + x_shift, g_palette[0], 8);
-  memset(dest + width + x_shift - 8, g_palette[0], 8);
+  for (int i = 0; i < x_shift; ++i) {
+    dest[i] = g_palette[0];
+  }
+  for (int i = width + x_shift; i < width; ++i) {
+    dest[i] = g_palette[0];
+  }
 
   memset(dest, border_rgb, border_left);
   memset(dest + width - border_right, border_rgb, border_right);
@@ -296,7 +260,7 @@ void InitScanOutTest(DisplayMode mode, int width, int height) {
 
   int width_words = width * GetDisplayModeBPP(mode) / 32;
 
-  unsigned pixels_addr = height * sizeof(ScanLine) / sizeof(uint32_t);
+  unsigned pixels_addr = offsetof(DisplayBank, lines[height]) / sizeof(uint32_t);
 
   for (int y = 0; y < height; ++y) {
     ScanLine* line = g_scan_bank->lines + y;

@@ -108,23 +108,17 @@ void TestSys80() {
 
   // Write command to port #2.
   for (int i = 0; i < 4; ++i) {
-    assert(!IsCommandReady());
-
     status = SimulateIORead(FIFO);
     assert(status == 0xFF);
     
     SimulateIOWrite(FIFO, i);
   }
 
-  assert(IsCommandReady());
-
   // Reading port #2 now indicates not ready.
   status = SimulateIORead(FIFO);
   assert(status == 0x00);
 
-  assert(UnloadCommand() == 0x03020100);
-  
-  assert(!IsCommandReady());
+  assert(PopFifo() == 0x03020100);
 
   // Reading port #2 now indicates ready again.
   status = SimulateIORead(FIFO);
