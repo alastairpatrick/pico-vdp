@@ -29,11 +29,12 @@ typedef enum {
 
   OPCODE_SETN,
   OPCODE_STREAM,
+  OPCODE_CLEAR,
 } Opcode;
 
 typedef struct {
-  Opcode opcode: 6;
-  int16_t operand: 10;
+  Opcode opcode: 8;
+  uint8_t operand;
 } ShortCommand;
 
 static_assert(sizeof(ShortCommand) == 2);
@@ -96,9 +97,9 @@ static void STRIPED_SECTION DoSet(int reg_idx, int value) {
 }
 
 static void STRIPED_SECTION DoStream(int low8, int high16) {
+  int addr = MakeAddress(low8, high16);
   int size = (uint16_t) g_blit_regs[0];
-  int addr = MakeAddress(low8 & 0x3, high16);
-  int step = ((low8 >> 2) & 0xFF) + 1;
+  int step = g_blit_regs[1];
 
   for (int i = 0; i < size; ++i) {
     do {
@@ -106,6 +107,20 @@ static void STRIPED_SECTION DoStream(int low8, int high16) {
     } while (IsFifoEmpty());
 
     uint32_t data = PopFifo();
+    WriteVRAM(addr, data);
+    addr += step;
+  }
+}
+
+static void STRIPED_SECTION DoClear(int low8, int high16) {
+  int addr = MakeAddress(low8, high16);
+  int size = (uint16_t) g_blit_regs[0];
+  int step = g_blit_regs[1];
+  uint32_t data = (uint8_t) g_blit_regs[2];
+  data = data | (data << 8) | (data << 16) | (data << 24);
+
+  for (int i = 0; i < size; ++i) {
+    MCycle();
     WriteVRAM(addr, data);
     addr += step;
   }
@@ -146,6 +161,9 @@ static void STRIPED_SECTION HandleLongCommand(Opcode opcode, int s_operand, int 
     break;
   case OPCODE_STREAM:
     DoStream(s_operand, l_operand);
+    break;
+  case OPCODE_CLEAR:
+    DoClear(s_operand, l_operand);
     break;
   default:
     break;
