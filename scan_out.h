@@ -66,14 +66,18 @@ typedef enum {
   SWAP_DOUBLE,
 } SwapMode;
 
-DisplayBank* GetBlitBank();
+extern volatile bool g_blit_clock_enable;
+
 void SwapBanks(SwapMode mode);
+bool IsSwapPending();
+DisplayBank* GetBlitBank();
 
 int GetDisplayModeBPP(DisplayMode mode);
 
 void InitScanOutTest(DisplayMode mode, int width, int height);
 
-void ScanOutReset();
+void ScanOutBeginDisplay();
 void ScanOutLine(uint8_t* dest, int y, int width);
+void ScanOutEndDisplay();
 
 #endif  // SCAN_OUT_H

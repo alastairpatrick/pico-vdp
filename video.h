@@ -1,6 +1,10 @@
 #ifndef VIDEO_H
 #define VIDEO_H
 
+#include "hardware/pwm.h"
+
+#define VIDEO_PWM 0
+
 typedef struct {
   int display_pixels;
   int front_porch_pixels;
@@ -28,6 +32,12 @@ extern const VideoTiming g_timing1024_768;
 
 void InitVideo(const VideoTiming* timing);
 void SetVideoResolution(int horz_shift, int vert_shift);
+void InitVideoInterrupts();
 void StartVideo();
+
+// Range is [0, 0xFFFF]. Counts logical pixels.
+static inline int STRIPED_SECTION GetDotTime() {
+  return pwm_get_counter(VIDEO_PWM);
+}
 
 #endif  // VIDEO_H

@@ -16,9 +16,11 @@ static DisplayBank g_display_bank_a;
 static DisplayBank g_display_bank_b;
 static int g_scan_bank_idx;
 static DisplayBank* g_scan_bank = &g_display_bank_a;
-static volatile DisplayBank* g_blit_bank = &g_display_bank_a;
+static DisplayBank* volatile g_blit_bank = &g_display_bank_a;
 static volatile bool g_swap_pending;
 static volatile SwapMode g_swap_mode;
+
+volatile bool g_blit_clock_enable = false;
 
 static ScanRegisters g_scan_regs;
 static int g_pixels_addr;
@@ -44,14 +46,17 @@ static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000110,
 };
 
-DisplayBank* GetBlitBank() {
-  return g_blit_bank;
-}
-
-void SwapBanks(SwapMode mode) {
+void STRIPED_SECTION SwapBanks(SwapMode mode) {
   g_swap_mode = mode;
   g_swap_pending = true;
-  while (g_swap_pending);
+}
+
+bool STRIPED_SECTION IsSwapPending() {
+  return g_swap_pending;
+}
+
+DisplayBank* STRIPED_SECTION GetBlitBank() {
+  return g_blit_bank;
 }
 
 void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
@@ -60,7 +65,7 @@ void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) 
   }
 }
 
-static inline uint32_t ReadPixelData() {
+static uint32_t SCAN_OUT_INNER_SECTION ReadPixelData() {
   uint32_t data = g_scan_bank->words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
   ++g_pixels_addr;
   return data;
@@ -122,7 +127,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
   }
 }
 
-void STRIPED_SECTION ScanOutReset() {
+void STRIPED_SECTION ScanOutBeginDisplay() {
   if (g_swap_pending) {
     g_scan_bank = g_blit_bank;
 
@@ -132,7 +137,7 @@ void STRIPED_SECTION ScanOutReset() {
 
     g_swap_pending = false;
   }
-  
+
   // TODO: this is just for testing.
   static int count;
   static int dir = 1;
@@ -153,6 +158,12 @@ void STRIPED_SECTION ScanOutReset() {
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   ScanLine* line = g_scan_bank->lines + y;
 
+  if (line->display_mode_en) {
+    g_display_mode = line->display_mode;
+  }
+
+  g_blit_clock_enable = g_swap_mode == SWAP_DOUBLE && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
+  
   uint32_t* source_palette = g_scan_bank->words + line->palette_addr;
   int palette_mask = line->palette_mask;
   for (int i = 0; i < 4; ++i) {
@@ -164,10 +175,6 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 
   if (line->pixels_addr_en) {
     g_pixels_addr = line->pixels_addr;
-  }
-
-  if (line->display_mode_en) {
-    g_display_mode = line->display_mode;
   }
 
   bool border_left = g_sys80_regs.border_left * 2;
@@ -209,6 +216,10 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 
   memset(dest, border_rgb, border_left);
   memset(dest + width - border_right, border_rgb, border_right);
+}
+
+void STRIPED_SECTION ScanOutEndDisplay() {
+  g_blit_clock_enable = true;
 }
 
 void PutPixel(int x, int y, int color) {

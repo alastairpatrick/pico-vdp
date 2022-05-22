@@ -64,7 +64,10 @@ static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 3];
 static int g_dma_data_chan, g_dma_ctrl_chan;
 
 static int g_logical_y;
-static int g_logical_width;
+
+static uint64_t g_sys_clk_div;
+static int32_t g_last_pwm_time;
+static uint64_t g_pwm_time_wraps;
 
 static DMAControlBlock MakeControlBlock(void* read_addr, int transfer_count) {
   DMAControlBlock result = {
@@ -89,8 +92,6 @@ static uint32_t MakeCmd(int run_pixels, bool hsync, bool vsync, bool raise_irq, 
 
 static void InitControlBlocks() {
   const VideoAxisTiming* horz = &g_timing.horz;
-  assert(horz->display_pixels <= MAX_HORZ_DISPLAY_RES);
-
   const VideoAxisTiming* vert = &g_timing.vert;
   assert(vert->display_pixels + vert->front_porch_pixels + vert->sync_pixels + vert->back_porch_pixels <= MAX_VERT_RES);
 
@@ -216,7 +217,6 @@ static void InitControlBlocks() {
 
 void STRIPED_SECTION StartVideo() {
   g_logical_y = 0;
-  ScanOutReset();
   dma_channel_set_read_addr(g_dma_ctrl_chan, g_dma_control_blocks, true);
 }
 
@@ -229,7 +229,14 @@ static void STRIPED_SECTION FrameISR() {
 
 static void STRIPED_SECTION LineISR() {
   pio_interrupt_clear(PIO, 0);
-  ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, g_logical_width);
+  if (g_logical_y == 0) {
+    ScanOutBeginDisplay();
+  }
+  int logical_width = g_timing.horz.display_pixels >> g_horz_shift;
+  ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, logical_width);
+  if (g_logical_y == (g_timing.vert.display_pixels >> g_vert_shift) - 1) {
+    ScanOutEndDisplay();
+  }
   ++g_logical_y;
 }
 
@@ -261,6 +268,29 @@ void InitVideo(const VideoTiming* timing) {
   channel_config_set_ring(&dma_cfg, true, 3);
   dma_channel_configure(g_dma_ctrl_chan, &dma_cfg, &dma_hw->ch[g_dma_data_chan].al3_transfer_count, NULL, 2, false);
 
+  pwm_config pwm_cfg = pwm_get_default_config();
+  pwm_init(VIDEO_PWM, &pwm_cfg, false);
+}
+
+void SetVideoResolution(int horz_shift, int vert_shift) {
+  assert((g_timing.horz.display_pixels >> horz_shift) <= MAX_HORZ_DISPLAY_RES);
+
+  g_horz_shift = horz_shift;
+  g_vert_shift = vert_shift;
+
+  int pio_clk_div = g_timing.pio_clk_div << horz_shift;
+  pio_sm_set_clkdiv_int_frac(PIO, 0, pio_clk_div >> 8, pio_clk_div & 0xFF);
+
+  // +1 because PIO timing is 2 cycles/pixel.
+  int pwm_clk_div = pio_clk_div << (vert_shift + 1);
+  assert(pwm_clk_div < 65536);  // 8.4 divider
+  pwm_set_clkdiv_int_frac(VIDEO_PWM, pwm_clk_div >> 8, (pwm_clk_div >> 4) & 0xF);
+  pwm_set_enabled(VIDEO_PWM, true);
+
+  InitControlBlocks();
+}
+
+void InitVideoInterrupts() {
   dma_irqn_set_channel_enabled(DMA_IRQ_IDX, g_dma_data_chan, true);
   irq_add_shared_handler(DMA_IRQ_0 + DMA_IRQ_IDX, FrameISR, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
   irq_set_enabled(DMA_IRQ_0 + DMA_IRQ_IDX, true);
@@ -268,15 +298,4 @@ void InitVideo(const VideoTiming* timing) {
   pio_set_irq0_source_enabled(PIO, pis_interrupt0, true);
   irq_set_exclusive_handler(PIO_IRQ, LineISR);
   irq_set_enabled(PIO_IRQ, true);
-}
-
-void SetVideoResolution(int horz_shift, int vert_shift) {
-  g_horz_shift = horz_shift;
-  g_vert_shift = vert_shift;
-  g_logical_width = g_timing.horz.display_pixels >> horz_shift;
-
-  int pio_clk_div = g_timing.pio_clk_div << horz_shift;
-  pio_sm_set_clkdiv_int_frac(PIO, 0, pio_clk_div >> 8, pio_clk_div & 0xFF);
-
-  InitControlBlocks();
 }
