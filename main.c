@@ -11,7 +11,7 @@
 #include "section.h"
 #include "sys80.h"
 #include "sys80_test.h"
-#include "video.h"
+#include "video_dma.h"
 
 void STRIPED_SECTION BlinkLoop() {
   gpio_init(LED_PIN);

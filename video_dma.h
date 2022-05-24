@@ -1,7 +1,9 @@
-#ifndef VIDEO_H
-#define VIDEO_H
+#ifndef VIDEO_DMA_H
+#define VIDEO_DMA_H
 
 #include "hardware/pwm.h"
+
+#include "section.h"
 
 #define VIDEO_PWM 0
 
@@ -40,4 +42,4 @@ static inline int STRIPED_SECTION GetDotTime() {
   return pwm_get_counter(VIDEO_PWM);
 }
 
-#endif  // VIDEO_H
+#endif  // VIDEO_DMA_H

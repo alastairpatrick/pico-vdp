@@ -14,8 +14,8 @@ add_executable(pico-vdp
   scan_out.c
   sys80.c
   sys80_test.c
-  test.c
-  video.c
+  main.c
+  video_dma.c
 )
 
 pico_generate_pio_header(pico-vdp ${CMAKE_CURRENT_LIST_DIR}/sys80.pio)

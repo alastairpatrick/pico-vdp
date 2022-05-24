@@ -9,11 +9,12 @@
 #include "hardware/pio.h"
 #include "hardware/pll.h"
 
+#include "video_dma.h"
+
 #include "pins.h"
 #include "scan_out.h"
 #include "section.h"
 
-#include "video.h"
 #include "video.pio.h"
 
 #define MAX_HORZ_DISPLAY_RES 1024

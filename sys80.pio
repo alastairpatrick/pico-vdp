@@ -93,7 +93,7 @@ PUBLIC entry:
 .DEFINE PUBLIC cs_pin 27
 
 write:
-  MOV ISR, PINS
+  IN PINS, 8    ; no auto-push (because it could block)
   PUSH NOBLOCK
   
 PUBLIC entry:
@@ -147,7 +147,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     -1,
   };
 
-  const static pio_fifo_join sm_fifo_join[4] = {
+  const static enum pio_fifo_join sm_fifo_join[4] = {
     PIO_FIFO_JOIN_NONE,
     PIO_FIFO_JOIN_NONE,
     PIO_FIFO_JOIN_NONE,

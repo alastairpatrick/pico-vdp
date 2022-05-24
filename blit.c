@@ -9,7 +9,7 @@
 #include "scan_out.h"
 #include "section.h"
 #include "sys80.h"
-#include "video.h"
+#include "video_dma.h"
 
 #define NUM_BLIT_REGS 8
 #define LOCAL_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
@@ -155,11 +155,11 @@ static void STRIPED_SECTION DoStreamDisplay() {
 }
 
 static void STRIPED_SECTION DoSave() {
-  const int bits_per_pixel = 4;
-  const int pixels_per_word = 32 / bits_per_pixel;
-  const int pixel_mask = (1 << bits_per_pixel) - 1;
+  const int display_bits_per_pixel = 4;
+  const int display_pixels_per_word = 32 / display_bits_per_pixel;
+  const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
 
-  int pixel_addr = g_blit_regs[BLIT_REG_DADDR];
+  int display_addr = g_blit_regs[BLIT_REG_DADDR];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
   int blit_addr = g_blit_regs[BLIT_REG_LADDR];
   int counts = g_blit_regs[BLIT_REG_COUNT];
@@ -169,24 +169,19 @@ static void STRIPED_SECTION DoSave() {
   int blit_height = counts >> 8;
 
   for (int y = 0; y < blit_height; ++y) {
-    int display_addr = pixel_addr / pixels_per_word;
+    int display_word_addr = display_addr / display_pixels_per_word;
 
-    int w = blit_width;
-    if (pixel_addr & (pixels_per_word-1)) {
-      ++w;
-    }
-
-    for (int i = 0; i < w; ++i) {
+    int width_words = (blit_width + (display_addr & (display_pixels_per_word-1)) + display_bits_per_pixel - 1) / display_bits_per_pixel;
+    for (int i = 0; i < width_words; ++i) {
       MCycle();
-
-      uint32_t data = ReadDisplayRAM(display_addr + i);
+      uint32_t data = ReadDisplayRAM(display_word_addr + i);
       WriteLocalRAM(--save_addr, data);
     }
 
     MCycle();
-    WriteLocalRAM(--save_addr, display_addr | (w << 16));
+    WriteLocalRAM(--save_addr, display_word_addr | (width_words << 16));
 
-    pixel_addr += pitch;
+    display_addr += pitch;
   }
 
   SetRegister(BLIT_REG_SAVE, save_addr);
@@ -230,7 +225,7 @@ static void STRIPED_SECTION DoBlit() {
   const int display_pixels_per_word = 32 / display_bits_per_pixel;
   const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
 
-  int pixel_addr = g_blit_regs[BLIT_REG_DADDR];
+  int display_addr = g_blit_regs[BLIT_REG_DADDR];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
   int blit_addr = g_blit_regs[BLIT_REG_LADDR];
   int counts = g_blit_regs[BLIT_REG_COUNT];
@@ -264,10 +259,10 @@ static void STRIPED_SECTION DoBlit() {
   int blit_shift = 0;
 
   for (int y = 0; y < blit_height; ++y) {
-    int display_addr = pixel_addr / display_pixels_per_word;
+    int display_word_addr = display_addr / display_pixels_per_word;
 
-    uint32_t display_colors8 = ReadDisplayRAM(display_addr);
-    int display_shift = (pixel_addr & (display_pixels_per_word-1)) * display_bits_per_pixel;
+    uint32_t display_colors8 = ReadDisplayRAM(display_word_addr);
+    int display_shift = (display_addr & (display_pixels_per_word-1)) * display_bits_per_pixel;
 
     for (int x = 0; x < blit_width; ++x) {
       int color = (blit_colors >> blit_shift) & blit_pixel_mask;
@@ -287,18 +282,18 @@ static void STRIPED_SECTION DoBlit() {
       display_shift += display_bits_per_pixel;
       if (display_shift == 32) {
         MCycle();
-        WriteDisplayRAM(display_addr++, display_colors8);
-        display_colors8 = ReadDisplayRAM(display_addr);
+        WriteDisplayRAM(display_word_addr++, display_colors8);
+        display_colors8 = ReadDisplayRAM(display_word_addr);
         display_shift = 0;
       }
     }
 
     if (display_shift) {
       MCycle();
-      WriteDisplayRAM(display_addr, display_colors8);
+      WriteDisplayRAM(display_word_addr, display_colors8);
     }
 
-    pixel_addr += pitch;
+    display_addr += pitch;
   }
 }
 
@@ -326,12 +321,8 @@ void STRIPED_SECTION BlitMain() {
   g_time = GetDotTime();
 
   for (;;) {
-    do {
-      MCycle();
-    } while (IsFifoEmpty());
-
+    int opcode = PopFifoBlocking8();
     MCycle();
-    int opcode = PopFifo();
 
     switch (opcode) {
     case OPCODE_BLIT:

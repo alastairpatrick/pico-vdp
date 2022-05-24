@@ -6,7 +6,7 @@
 
 #include "section.h"
 #include "sys80.h"
-#include "video.h"
+#include "video_dma.h"
 
 #include "scan_out.h"
 
