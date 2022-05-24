@@ -45,25 +45,27 @@ typedef enum {
   OPCODE_SET6,
   OPCODE_SET7,
 
-  OPCODE_SET01      = 0x11,
+  OPCODE_SET01      = 0x10,
   OPCODE_SET23      = 0x12,
-  OPCODE_SET45      = 0x13,
-  OPCODE_SET67      = 0x14,
+  OPCODE_SET45      = 0x14,
+  OPCODE_SET67      = 0x16,
 
-  OPCODE_DSTREAM    = 0x20,
-  OPCODE_LSTREAM    = 0x21,
-  OPCODE_BLIT       = 0x22,
-  OPCODE_SAVE       = 0x23,
-  OPCODE_RESTORE    = 0x24,
-  OPCODE_SWAP       = 0x25,
-  OPCODE_BLITCHAR   = 0x26,
-  OPCODE_MOVE       = 0x27,
-  OPCODE_DLCOPY     = 0x28,
-  OPCODE_LDCOPY     = 0x29,
-  OPCODE_DDCOPY     = 0x2A,
-  OPCODE_LLCOPY     = 0x2B,
-  OPCODE_MOVE2      = 0x2C,
+  OPCODE_MOVE       = 0x20,
+  OPCODE_MOVE2      = 0x26,
 
+  OPCODE_DSTREAM    = 0x30,
+  OPCODE_LSTREAM    = 0x31,
+  OPCODE_DDCOPY     = 0x32,
+  OPCODE_DLCOPY     = 0x33,
+  OPCODE_LDCOPY     = 0x34,
+  OPCODE_LLCOPY     = 0x35,
+
+  OPCODE_BLIT       = 0x80,
+  OPCODE_BLITCHAR   = 0x81,
+  OPCODE_SAVE       = 0x90,
+  OPCODE_RESTORE    = 0x91,
+
+  OPCODE_SWAP       = 0xFE,
   OPCODE_NOP        = 0xFF,
 } Opcode;
 
