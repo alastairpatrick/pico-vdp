@@ -10,9 +10,15 @@
 typedef union {
   struct {
     uint8_t dummy[32];
-    uint8_t border_rgb;
-    uint8_t border_left: 4;
+    uint8_t border_rgb;           // $20
+    uint8_t border_left: 4;       // $21
     uint8_t border_right: 4;
+    uint8_t sprite_period;        // $22
+    uint8_t sprite_duty;          // $23
+    uint8_t sprite_x;             // $24
+    uint8_t sprite_y;             // $25
+    uint8_t sprite_rgb;           // $26
+    uint16_t sprite_bitmap[8];    // $27
   };
   uint8_t bytes[256];
 } Sys80Registers;

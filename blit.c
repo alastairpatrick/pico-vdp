@@ -57,6 +57,8 @@ typedef enum {
   OPCODE_SWAP       = 0x25,
   OPCODE_BLITCHAR   = 0x26,
   OPCODE_MOVE       = 0x27,
+  OPCODE_DLCOPY     = 0x28,
+  OPCODE_LDCOPY     = 0x29,
 
   OPCODE_NOP        = 0xFF,
 } Opcode;
@@ -145,14 +147,20 @@ static void STRIPED_SECTION DoStreamLocal() {
 
 static void STRIPED_SECTION DoStreamDisplay() {
   int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
-  int size = g_blit_regs[BLIT_REG_COUNT];
-  int step = g_blit_regs[BLIT_REG_DPITCH];
+  int counts = g_blit_regs[BLIT_REG_COUNT];
+  int pitch = g_blit_regs[BLIT_REG_DPITCH];
 
-  for (int i = 0; i < size; ++i) {
-    MCycle();    
-    uint32_t data = PopFifoBlocking32();
-    WriteDisplayRAM(addr, data);
-    addr += step;
+  int w = counts & 0xFF;
+  int h = counts >> 8;
+
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      MCycle();    
+      uint32_t data = PopFifoBlocking32();
+      WriteDisplayRAM(addr + x, data);
+    }
+    
+    addr += pitch;
   }
 }
 
@@ -307,6 +315,46 @@ static void STRIPED_SECTION DoBlitChar(int c) {
   Blit((value & 0xFE00) | (c << 1));
 }
 
+static void STRIPED_SECTION DoDisplayToLocalCopy() {
+  int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
+  int counts = g_blit_regs[BLIT_REG_COUNT];
+  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int local_addr = g_blit_regs[BLIT_REG_LADDR];
+
+  int w = counts & 0xFF;
+  int h = counts >> 8;
+
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      MCycle();    
+      uint32_t data = ReadDisplayRAM(display_addr + x);
+      WriteLocalRAM(local_addr++, data);
+    }
+    
+    display_addr += pitch;
+  }
+}
+
+static void STRIPED_SECTION DoLocalToDisplayCopy() {
+  int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
+  int counts = g_blit_regs[BLIT_REG_COUNT];
+  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int local_addr = g_blit_regs[BLIT_REG_LADDR];
+
+  int w = counts & 0xFF;
+  int h = counts >> 8;
+
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      MCycle();    
+      uint32_t data = ReadLocalRAM(local_addr++ + x);
+      WriteDisplayRAM(display_addr + x, data);
+    }
+    
+    display_addr += pitch;
+  }
+}
+
 static void STRIPED_SECTION DoMove(int operand) {
   int value = g_blit_regs[BLIT_REG_DADDR];
   SetRegister(BLIT_REG_DADDR, value + operand);
@@ -337,6 +385,12 @@ void STRIPED_SECTION BlitMain() {
       break;
     case OPCODE_BLITCHAR:
       DoBlitChar(PopFifoBlocking8());
+      break;
+    case OPCODE_DLCOPY:
+      DoDisplayToLocalCopy();
+      break;
+    case OPCODE_LDCOPY:
+      DoLocalToDisplayCopy();
       break;
     case OPCODE_MOVE:
       DoMove(PopFifoBlocking16());

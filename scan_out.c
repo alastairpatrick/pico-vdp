@@ -26,6 +26,8 @@ static ScanRegisters g_scan_regs;
 static int g_pixels_addr;
 static DisplayMode g_display_mode;
 
+static int g_sprite_cycle;
+
 static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000000,
   0b11111111,
@@ -153,6 +155,10 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   count = (count+1) % 5;
 
   g_scan_regs = g_scan_bank->regs;
+
+  if (++g_sprite_cycle >= g_sys80_regs.sprite_period) {
+    g_sprite_cycle = 0;
+  }
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
@@ -205,6 +211,25 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
     default:
       ScanOutSolid(dest + x_shift, width, AWFUL_MAGENTA);
       break;
+  }
+
+  if (g_sprite_cycle <= g_sys80_regs.sprite_duty) {
+    int sprite_x = g_sys80_regs.sprite_x;
+    int sprite_y = g_sys80_regs.sprite_y;
+    int sprite_rgb = g_sys80_regs.sprite_rgb;
+
+    if (y >= sprite_y && y < sprite_y + 8) {
+      int sprite_bits = g_sys80_regs.sprite_bitmap[y - sprite_y];
+      for (int x = 0; x < 16; ++x) {
+        if (sprite_x + x_shift + x >= width) {
+          break;
+        }
+
+        if ((sprite_bits >> x) & 1) {
+          dest[sprite_x + x_shift + x] = sprite_rgb;
+        }
+      }
+    }
   }
 
   for (int i = 0; i < x_shift; ++i) {
