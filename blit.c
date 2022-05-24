@@ -31,7 +31,8 @@ enum {
   BLIT_REG_COUNT         = 3,  // 16-bit. Iteration count or count pair.
   BLIT_REG_DPITCH        = 4,  // 9-bit. Offset added to display address.
   BLIT_REG_FLAGS         = 5,  // 16-bit. Miscellaneous flags.
-  BLIT_REG_SAVE          = 7,  // 16-bit. Address of top of save stack in local bank.
+  BLIT_REG_DADDR2        = 6,  // 16-bit. Address of nibble in display bank.
+  BLIT_REG_LADDR2        = 7,  // 16-bit. Address of a 32-bit word in local bank.
 };
 
 typedef enum {
@@ -59,6 +60,8 @@ typedef enum {
   OPCODE_MOVE       = 0x27,
   OPCODE_DLCOPY     = 0x28,
   OPCODE_LDCOPY     = 0x29,
+  OPCODE_DDCOPY     = 0x2A,
+  OPCODE_LLCOPY     = 0x2B,
 
   OPCODE_NOP        = 0xFF,
 } Opcode;
@@ -148,7 +151,7 @@ static void STRIPED_SECTION DoStreamLocal() {
 static void STRIPED_SECTION DoStreamDisplay() {
   int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
   int counts = g_blit_regs[BLIT_REG_COUNT];
-  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
 
   int w = counts & 0xFF;
   int h = counts >> 8;
@@ -170,7 +173,7 @@ static void STRIPED_SECTION Blit(int blit_addr) {
   const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
 
   int display_addr = g_blit_regs[BLIT_REG_DADDR];
-  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int counts = g_blit_regs[BLIT_REG_COUNT];
   int clip = g_blit_regs[BLIT_REG_CLIP];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
@@ -249,10 +252,32 @@ static void STRIPED_SECTION DoBlitChar(int c) {
   Blit((value & 0xFE00) | (c << 1));
 }
 
+// TODO: should there be a version of this command that copies in reverse in case of overlap?
+static void STRIPED_SECTION DoDisplayToDisplayCopy() {
+  int dest_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
+  int counts = g_blit_regs[BLIT_REG_COUNT];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
+  int source_addr = g_blit_regs[BLIT_REG_DADDR2] >> 3;
+
+  int w = counts & 0xFF;
+  int h = counts >> 8;
+
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      MCycle();    
+      uint32_t data = ReadDisplayRAM(source_addr + x);
+      WriteLocalRAM(dest_addr + x, data);
+    }
+    
+    source_addr += pitch;
+    dest_addr += pitch;
+  }
+}
+
 static void STRIPED_SECTION DoDisplayToLocalCopy() {
   int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
   int counts = g_blit_regs[BLIT_REG_COUNT];
-  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int local_addr = g_blit_regs[BLIT_REG_LADDR];
 
   int w = counts & 0xFF;
@@ -272,7 +297,7 @@ static void STRIPED_SECTION DoDisplayToLocalCopy() {
 static void STRIPED_SECTION DoLocalToDisplayCopy() {
   int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
   int counts = g_blit_regs[BLIT_REG_COUNT];
-  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int local_addr = g_blit_regs[BLIT_REG_LADDR];
 
   int w = counts & 0xFF;
@@ -289,13 +314,26 @@ static void STRIPED_SECTION DoLocalToDisplayCopy() {
   }
 }
 
+// TODO: should there be a version of this command that copies in reverse in case of overlap?
+static void STRIPED_SECTION DoLocalToLocalCopy() {
+  int dest_addr = g_blit_regs[BLIT_REG_LADDR];
+  int source_addr = g_blit_regs[BLIT_REG_LADDR2];
+  int size = g_blit_regs[BLIT_REG_COUNT];
+
+  for (int i = 0; i < size; ++i) {
+    MCycle();
+    uint32_t data = ReadLocalRAM(source_addr++);
+    WriteLocalRAM(dest_addr++, data);
+  }
+}
+
 static void STRIPED_SECTION DoMove(int operand) {
   int value = g_blit_regs[BLIT_REG_DADDR];
   SetRegister(BLIT_REG_DADDR, value + operand);
 }
 
 static void STRIPED_SECTION DoRestore() {
-  int save_addr = g_blit_regs[BLIT_REG_SAVE];
+  int save_addr = g_blit_regs[BLIT_REG_LADDR2];
   if (save_addr == 0) {
     save_addr = 0x10000;
   }
@@ -324,14 +362,14 @@ static void STRIPED_SECTION DoRestore() {
     }
   }
 
-  SetRegister(BLIT_REG_SAVE, save_addr);
+  SetRegister(BLIT_REG_LADDR2, save_addr);
 }
 
 static void STRIPED_SECTION DoSave() {
   int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
   int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
-  int save_addr = g_blit_regs[BLIT_REG_SAVE];
+  int save_addr = g_blit_regs[BLIT_REG_LADDR2];
 
   int w = counts & 0xFF;
   int h = counts >> 8;
@@ -349,7 +387,7 @@ static void STRIPED_SECTION DoSave() {
     display_addr += pitch;
   }
 
-  SetRegister(BLIT_REG_SAVE, save_addr);
+  SetRegister(BLIT_REG_LADDR2, save_addr);
 }
 
 static void STRIPED_SECTION DoSwap() {
@@ -378,11 +416,17 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_BLITCHAR:
       DoBlitChar(PopFifoBlocking8());
       break;
+    case OPCODE_DDCOPY:
+      DoDisplayToDisplayCopy();
+      break;
     case OPCODE_DLCOPY:
       DoDisplayToLocalCopy();
       break;
     case OPCODE_LDCOPY:
       DoLocalToDisplayCopy();
+      break;
+    case OPCODE_LLCOPY:
+      DoLocalToLocalCopy();
       break;
     case OPCODE_MOVE:
       DoMove(PopFifoBlocking16());
