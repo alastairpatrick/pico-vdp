@@ -146,6 +146,13 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     8,
   };
 
+  const static pio_fifo_join sm_fifo_join[4] = {
+    PIO_FIFO_JOIN_NONE,
+    PIO_FIFO_JOIN_NONE,
+    PIO_FIFO_JOIN_NONE,
+    PIO_FIFO_JOIN_RX,
+  };
+
   pio_sm_config c = pio_get_default_sm_config();
 
   sm_config_set_wrap(&c, offset + sm_wrap_target[sm], offset + sm_wrap[sm]);
@@ -163,11 +170,9 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
 
   sm_config_set_jmp_pin(&c, RD_PIN);
 
-  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 1);
+  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 5);
 
-  if (sm == 3) {
-    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
-  }
+  sm_config_set_fifo_join(&c, sm_fifo_join[sm]);
 
   pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
 
