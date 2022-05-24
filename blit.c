@@ -60,8 +60,9 @@ typedef enum {
   OPCODE_LDCOPY     = 0x34,
   OPCODE_LLCOPY     = 0x35,
 
-  OPCODE_BLIT       = 0x80,
-  OPCODE_BLITCHAR   = 0x81,
+  OPCODE_RECT       = 0x80,
+  OPCODE_BLIT       = 0x81,
+  OPCODE_BLITCHAR   = 0x82,
   OPCODE_SAVE       = 0x90,
   OPCODE_RESTORE    = 0x91,
 
@@ -331,6 +332,47 @@ static void STRIPED_SECTION DoMove(int reg_idx, int operand) {
   SetRegister(reg_idx, value + operand);
 }
 
+static void STRIPED_SECTION DoRect(int color) {
+  const int display_bits_per_pixel = 4;
+  const int display_pixels_per_word = 32 / display_bits_per_pixel;
+  const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
+  
+  int display_addr = g_blit_regs[BLIT_REG_DADDR];
+  int counts = g_blit_regs[BLIT_REG_COUNT];
+  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  
+  int width = counts & 0xFF;
+  int height = counts >> 8;
+
+  for (int y = 0; y < height; ++y) {
+    int display_word_addr = display_addr / display_pixels_per_word;
+
+    uint32_t display_colors8 = ReadDisplayRAM(display_word_addr);
+    int display_shift = (display_addr & (display_pixels_per_word-1)) * display_bits_per_pixel;
+
+    for (int x = 0; x < width; ++x) {
+      display_colors8 = (display_colors8 & ~(display_pixel_mask << display_shift)) | (color << display_shift);
+
+      display_shift += display_bits_per_pixel;
+      if (display_shift == 32) {
+        MCycle();
+        WriteDisplayRAM(display_word_addr++, display_colors8);
+        display_colors8 = ReadDisplayRAM(display_word_addr);
+        display_shift = 0;
+      }
+    }
+
+    if (display_shift) {
+      MCycle();
+      WriteDisplayRAM(display_word_addr, display_colors8);
+    }
+
+
+
+    display_addr += pitch;
+  }
+}
+
 static void STRIPED_SECTION DoRestore() {
   int save_addr = g_blit_regs[BLIT_REG_LADDR2];
   if (save_addr == 0) {
@@ -432,6 +474,9 @@ void STRIPED_SECTION BlitMain() {
       break;
     case OPCODE_MOVE2:
       DoMove(BLIT_REG_DADDR2, PopFifoBlocking16());
+      break;
+    case OPCODE_RECT:
+      DoRect(PopFifoBlocking8());
       break;
     case OPCODE_RESTORE:
       DoRestore();
