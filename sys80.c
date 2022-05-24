@@ -101,6 +101,14 @@ void InitSys80() {
   g_await_write_channel = dma_claim_unused_channel(true);
   g_write_register_channel = dma_claim_unused_channel(true);
 
+  pio_gpio_init(SYS80_PIO, CS0_PIN);
+  pio_gpio_init(SYS80_PIO, CS1_PIN);
+  pio_gpio_init(SYS80_PIO, CS2_PIN);
+
+  for (int i = 0; i < 8; ++i) {
+     pio_gpio_init(SYS80_PIO, DATA_PINS + i);
+  }
+
   InitSM0();
   InitSM1();
   InitSM2();

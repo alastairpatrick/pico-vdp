@@ -93,7 +93,7 @@ PUBLIC entry:
 .DEFINE PUBLIC cs_pin 27
 
 write:
-  IN PINS, 8                      ; auto-push every 32-bits
+  IN PINS, 8                      ; auto-push
   
 PUBLIC entry:
 .WRAP_TARGET
@@ -143,14 +143,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     32,
     8,
     8,
-    32,
-  };
-
-  const static bool sm_in_shift_dir[4] = {
-    false,  // left
-    false,  // left
-    false,  // left
-    true,   // right
+    8,
   };
 
   pio_sm_config c = pio_get_default_sm_config();
@@ -158,7 +151,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   sm_config_set_wrap(&c, offset + sm_wrap_target[sm], offset + sm_wrap[sm]);
 
   sm_config_set_in_pins(&c, DATA_PINS);
-  sm_config_set_in_shift(&c, sm_in_shift_dir[sm], sm_auto_push[sm] >= 0, sm_auto_push[sm]);
+  sm_config_set_in_shift(&c, false, sm_auto_push[sm] >= 0, sm_auto_push[sm]);
 
   sm_config_set_out_pins(&c, DATA_PINS, 8);
   sm_config_set_out_shift(&c, true /*right shift*/, sm_auto_pull[sm] >= 0, sm_auto_pull[sm]);
@@ -172,17 +165,11 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
 
   sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 1);
 
-  pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
-
-  pio_gpio_init(pio, CS0_PIN);
-  pio_gpio_init(pio, CS1_PIN);
-  pio_gpio_init(pio, CS2_PIN);
-
-  // Configure the data pins so they can be controlled via PINDIRS but currently still inputs.
-  // TODO: this should be done externally to sys80_program_init; it isn't for a single SM.
-  for (int i = 0; i < 8; ++i) {
-     pio_gpio_init(pio, DATA_PINS + i);
+  if (sm == 3) {
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_RX);
   }
+
+  pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
 
   pio_sm_init(pio, sm, offset + sm_entry[sm], &c);
 	pio_sm_set_enabled(pio, sm, true);
