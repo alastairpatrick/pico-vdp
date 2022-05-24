@@ -164,72 +164,6 @@ static void STRIPED_SECTION DoStreamDisplay() {
   }
 }
 
-static void STRIPED_SECTION DoSave() {
-  const int display_bits_per_pixel = 4;
-  const int display_pixels_per_word = 32 / display_bits_per_pixel;
-  const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
-
-  int display_addr = g_blit_regs[BLIT_REG_DADDR];
-  int pitch = g_blit_regs[BLIT_REG_DPITCH];
-  int blit_addr = g_blit_regs[BLIT_REG_LADDR];
-  int counts = g_blit_regs[BLIT_REG_COUNT];
-  int save_addr = g_blit_regs[BLIT_REG_SAVE];
-
-  int blit_width = counts & 0xFF;
-  int blit_height = counts >> 8;
-
-  for (int y = 0; y < blit_height; ++y) {
-    int display_word_addr = display_addr / display_pixels_per_word;
-
-    int width_words = (blit_width + (display_addr & (display_pixels_per_word-1)) + display_bits_per_pixel - 1) / display_bits_per_pixel;
-    for (int i = 0; i < width_words; ++i) {
-      MCycle();
-      uint32_t data = ReadDisplayRAM(display_word_addr + i);
-      WriteLocalRAM(--save_addr, data);
-    }
-
-    MCycle();
-    WriteLocalRAM(--save_addr, display_word_addr | (width_words << 16));
-
-    display_addr += pitch;
-  }
-
-  SetRegister(BLIT_REG_SAVE, save_addr);
-}
-
-static void STRIPED_SECTION DoRestore() {
-  int save_addr = g_blit_regs[BLIT_REG_SAVE];
-  if (save_addr == 0) {
-    save_addr = 0x10000;
-  }
-
-  int end_addr = 0x10000;
-
-  while (save_addr < end_addr) {
-    MCycle();
-    uint32_t header = ReadLocalRAM(save_addr++);
-    int display_addr = header & 0xFFFF;
-    int w = header >> 16;
-
-    if (save_addr >= end_addr) {
-      break;
-    }
-
-    for (int i = 0; i < w; ++i) {
-      MCycle();
-
-      uint32_t data = ReadLocalRAM(save_addr++);
-      WriteDisplayRAM(display_addr + i, data);
-
-      if (save_addr >= end_addr) {
-        break;
-      }
-    }
-  }
-
-  SetRegister(BLIT_REG_SAVE, save_addr);
-}
-
 static void STRIPED_SECTION Blit(int blit_addr) {
   const int display_bits_per_pixel = 4;
   const int display_pixels_per_word = 32 / display_bits_per_pixel;
@@ -358,6 +292,64 @@ static void STRIPED_SECTION DoLocalToDisplayCopy() {
 static void STRIPED_SECTION DoMove(int operand) {
   int value = g_blit_regs[BLIT_REG_DADDR];
   SetRegister(BLIT_REG_DADDR, value + operand);
+}
+
+static void STRIPED_SECTION DoRestore() {
+  int save_addr = g_blit_regs[BLIT_REG_SAVE];
+  if (save_addr == 0) {
+    save_addr = 0x10000;
+  }
+
+  const int end_addr = 0x10000;
+
+  while (save_addr < end_addr) {
+    MCycle();
+    uint32_t header = ReadLocalRAM(save_addr++);
+    int display_addr = header & 0xFFFF;
+    int w = header >> 16;
+
+    if (save_addr >= end_addr) {
+      break;
+    }
+
+    for (int x = 0; x < w; ++x) {
+      MCycle();
+
+      uint32_t data = ReadLocalRAM(save_addr++);
+      WriteDisplayRAM(display_addr + x, data);
+
+      if (save_addr >= end_addr) {
+        break;
+      }
+    }
+  }
+
+  SetRegister(BLIT_REG_SAVE, save_addr);
+}
+
+static void STRIPED_SECTION DoSave() {
+  int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
+  int counts = g_blit_regs[BLIT_REG_COUNT];
+  int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int save_addr = g_blit_regs[BLIT_REG_SAVE];
+
+  int w = counts & 0xFF;
+  int h = counts >> 8;
+
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      MCycle();    
+      uint32_t data = ReadDisplayRAM(display_addr + x);
+      WriteLocalRAM(--save_addr, data);
+    }
+    
+    MCycle();
+    WriteLocalRAM(--save_addr, display_addr | (w << 16));
+
+    display_addr += pitch;
+  }
+
+  SetRegister(BLIT_REG_SAVE, save_addr);
 }
 
 static void STRIPED_SECTION DoSwap() {
