@@ -55,6 +55,8 @@ typedef enum {
   OPCODE_SAVE       = 0x23,
   OPCODE_RESTORE    = 0x24,
   OPCODE_SWAP       = 0x25,
+  OPCODE_BLITCHAR   = 0x26,
+  OPCODE_MOVE       = 0x27,
 
   OPCODE_NOP        = 0xFF,
 } Opcode;
@@ -220,14 +222,13 @@ static void STRIPED_SECTION DoRestore() {
   SetRegister(BLIT_REG_SAVE, save_addr);
 }
 
-static void STRIPED_SECTION DoBlit() {
+static void STRIPED_SECTION Blit(int blit_addr) {
   const int display_bits_per_pixel = 4;
   const int display_pixels_per_word = 32 / display_bits_per_pixel;
   const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
 
   int display_addr = g_blit_regs[BLIT_REG_DADDR];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
-  int blit_addr = g_blit_regs[BLIT_REG_LADDR];
   int counts = g_blit_regs[BLIT_REG_COUNT];
   int clip = g_blit_regs[BLIT_REG_CLIP];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
@@ -297,6 +298,20 @@ static void STRIPED_SECTION DoBlit() {
   }
 }
 
+static void STRIPED_SECTION DoBlit() {
+  Blit(g_blit_regs[BLIT_REG_LADDR]);
+}
+
+static void STRIPED_SECTION DoBlitChar(int c) {
+  int value = g_blit_regs[BLIT_REG_LADDR];
+  Blit((value & 0xFE00) | (c << 1));
+}
+
+static void STRIPED_SECTION DoMove(int operand) {
+  int value = g_blit_regs[BLIT_REG_DADDR];
+  SetRegister(BLIT_REG_DADDR, value + operand);
+}
+
 static void STRIPED_SECTION DoSwap() {
   SwapMode mode = (SwapMode) g_blit_regs[BLIT_REG_FLAGS];
   SwapBanks(mode);
@@ -306,14 +321,6 @@ static void STRIPED_SECTION DoSwap() {
   }
 
   g_blit_bank = GetBlitBank();
-}
-
-static uint8_t STRIPED_SECTION PopOperand() {
-  // Only burns cycles if FIFO is not ready.
-  while (IsFifoEmpty()) {
-    MCycle();
-  }
-  return PopFifo();
 }
 
 void STRIPED_SECTION BlitMain() {
@@ -327,6 +334,12 @@ void STRIPED_SECTION BlitMain() {
     switch (opcode) {
     case OPCODE_BLIT:
       DoBlit();
+      break;
+    case OPCODE_BLITCHAR:
+      DoBlitChar(PopFifoBlocking8());
+      break;
+    case OPCODE_MOVE:
+      DoMove(PopFifoBlocking16());
       break;
     case OPCODE_RESTORE:
       DoRestore();
