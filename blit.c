@@ -62,6 +62,7 @@ typedef enum {
   OPCODE_LDCOPY     = 0x29,
   OPCODE_DDCOPY     = 0x2A,
   OPCODE_LLCOPY     = 0x2B,
+  OPCODE_MOVE2      = 0x2C,
 
   OPCODE_NOP        = 0xFF,
 } Opcode;
@@ -130,10 +131,6 @@ static uint32_t STRIPED_SECTION ReadDisplayRAM(unsigned addr) {
 
 static void STRIPED_SECTION WriteDisplayRAM(unsigned addr, uint32_t data) {
   g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
-}
-
-static void STRIPED_SECTION DoSet(unsigned reg_idx, int value) {
-  SetRegister(reg_idx, value);
 }
 
 static void STRIPED_SECTION DoStreamLocal() {
@@ -306,7 +303,7 @@ static void STRIPED_SECTION DoLocalToDisplayCopy() {
   for (int y = 0; y < h; ++y) {
     for (int x = 0; x < w; ++x) {
       MCycle();    
-      uint32_t data = ReadLocalRAM(local_addr++ + x);
+      uint32_t data = ReadLocalRAM(local_addr++);
       WriteDisplayRAM(display_addr + x, data);
     }
     
@@ -327,9 +324,9 @@ static void STRIPED_SECTION DoLocalToLocalCopy() {
   }
 }
 
-static void STRIPED_SECTION DoMove(int operand) {
-  int value = g_blit_regs[BLIT_REG_DADDR];
-  SetRegister(BLIT_REG_DADDR, value + operand);
+static void STRIPED_SECTION DoMove(int reg_idx, int operand) {
+  int value = g_blit_regs[reg_idx];
+  SetRegister(reg_idx, value + operand);
 }
 
 static void STRIPED_SECTION DoRestore() {
@@ -429,7 +426,10 @@ void STRIPED_SECTION BlitMain() {
       DoLocalToLocalCopy();
       break;
     case OPCODE_MOVE:
-      DoMove(PopFifoBlocking16());
+      DoMove(BLIT_REG_DADDR, PopFifoBlocking16());
+      break;
+    case OPCODE_MOVE2:
+      DoMove(BLIT_REG_DADDR2, PopFifoBlocking16());
       break;
     case OPCODE_RESTORE:
       DoRestore();
