@@ -85,7 +85,7 @@ PUBLIC entry:
 
 
 ; SM 3
-; 7 instructions
+; 8 instructions
 ; Port FIFO (write) Streams data to ring buffer in internal SRAM.
 ; Port FIFO (read) Counts bytes written to this port.
 .PROGRAM sys80_fifo
@@ -93,7 +93,8 @@ PUBLIC entry:
 .DEFINE PUBLIC cs_pin 27
 
 write:
-  IN PINS, 8                      ; auto-push
+  MOV ISR, PINS
+  PUSH NOBLOCK
   
 PUBLIC entry:
 .WRAP_TARGET
@@ -143,7 +144,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     32,
     8,
     8,
-    8,
+    -1,
   };
 
   const static pio_fifo_join sm_fifo_join[4] = {
