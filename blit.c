@@ -16,12 +16,16 @@
 #define MCYCLE_TIME 16
 
 enum {
-  BLIT_FLAG_XOR          = 0x0F,
-  BLIT_FLAG_UNZIP        = 0x70,
-  BLIT_FLAG_UNZIP_OFF    = 0x00,
-  BLIT_FLAG_UNZIP_2X     = 0x10,
-  BLIT_FLAG_UNZIP_4X     = 0x20,
-  BLIT_FLAG_MASKED       = 0x80,
+  BLIT_FLAG_SRC_XOR      = 0x000F,
+  BLIT_FLAG_UNZIP        = 0x0070,
+  BLIT_FLAG_UNZIP_OFF    = 0x0000,
+  BLIT_FLAG_UNZIP_2X     = 0x0010,
+  BLIT_FLAG_UNZIP_4X     = 0x0020,
+  BLIT_FLAG_MASKED       = 0x0080,
+  BLIT_FLAG_DEST_LOGIC   = 0x0300,
+  BLIT_FLAG_DEST_AND     = 0x0100,
+  BLIT_FLAG_DEST_OR      = 0x0200,
+  BLIT_FLAG_DEST_XOR     = 0x0300,
 };
 
 enum {
@@ -136,6 +140,30 @@ static void STRIPED_SECTION WriteDisplayRAM(unsigned addr, uint32_t data) {
   g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
 }
 
+static uint32_t STRIPED_SECTION ApplyDrawLogic(uint32_t display_colors8, int src_color, int display_shift) {
+  const int display_bits_per_pixel = 4;
+  const int display_pixels_per_word = 32 / display_bits_per_pixel;
+  const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
+  
+  int flags = g_blit_regs[BLIT_REG_FLAGS];
+
+  int src_xor = flags & BLIT_FLAG_SRC_XOR;
+  int dest_logic = flags & BLIT_FLAG_DEST_LOGIC;
+
+  src_color ^= src_xor;
+
+  switch (dest_logic) {
+    case BLIT_FLAG_DEST_AND:
+      return display_colors8 & ~((~src_color) << display_shift);
+    case BLIT_FLAG_DEST_OR:
+      return display_colors8 | (src_color << display_shift);
+    case BLIT_FLAG_DEST_XOR:
+      return display_colors8 ^ (src_color << display_shift);
+    default:
+      return (display_colors8 & ~(display_pixel_mask << display_shift)) | (src_color << display_shift);
+  }
+}
+
 static void STRIPED_SECTION DoStreamLocal() {
   int addr = g_blit_regs[BLIT_REG_LADDR];
   int size = g_blit_regs[BLIT_REG_COUNT];
@@ -182,8 +210,8 @@ static void STRIPED_SECTION Blit(int blit_addr) {
   int clip_right = clip >> 8;
   int blit_width = counts & 0xFF;
   int blit_height = counts >> 8;
+  int dest_logic = flags & BLIT_FLAG_DEST_LOGIC;
 
-  int blit_xor = flags & BLIT_FLAG_XOR;
   int unmasked = !(flags & BLIT_FLAG_MASKED);
 
   int blit_bits_per_pixel;
@@ -214,8 +242,7 @@ static void STRIPED_SECTION Blit(int blit_addr) {
       int color = (blit_colors >> blit_shift) & blit_pixel_mask;
       if (color | unmasked) {
         if (x >= clip_left && x <= clip_right) {
-          color ^= blit_xor;
-          display_colors8 = (display_colors8 & ~(display_pixel_mask << display_shift)) | (color << display_shift);
+          display_colors8 = ApplyDrawLogic(display_colors8, color, display_shift);
         }
       }
 
@@ -228,6 +255,11 @@ static void STRIPED_SECTION Blit(int blit_addr) {
       display_shift += display_bits_per_pixel;
       if (display_shift == 32) {
         MCycle();
+        if (dest_logic) {
+          // Extra cycle for read-modify-write of display RAM rather just write.
+          MCycle();
+        }
+
         WriteDisplayRAM(display_word_addr++, display_colors8);
         display_colors8 = ReadDisplayRAM(display_word_addr);
         display_shift = 0;
@@ -236,6 +268,10 @@ static void STRIPED_SECTION Blit(int blit_addr) {
 
     if (display_shift) {
       MCycle();
+      if (dest_logic) {
+        MCycle();
+      }
+        
       WriteDisplayRAM(display_word_addr, display_colors8);
     }
 
@@ -340,7 +376,7 @@ static void STRIPED_SECTION DoRect(int color) {
   int display_addr = g_blit_regs[BLIT_REG_DADDR];
   int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
-  
+
   int width = counts & 0xFF;
   int height = counts >> 8;
 
@@ -351,8 +387,7 @@ static void STRIPED_SECTION DoRect(int color) {
     int display_shift = (display_addr & (display_pixels_per_word-1)) * display_bits_per_pixel;
 
     for (int x = 0; x < width; ++x) {
-      display_colors8 = (display_colors8 & ~(display_pixel_mask << display_shift)) | (color << display_shift);
-
+      display_colors8 = ApplyDrawLogic(display_colors8, color, display_shift);
       display_shift += display_bits_per_pixel;
       if (display_shift == 32) {
         MCycle();
@@ -366,8 +401,6 @@ static void STRIPED_SECTION DoRect(int color) {
       MCycle();
       WriteDisplayRAM(display_word_addr, display_colors8);
     }
-
-
 
     display_addr += pitch;
   }
