@@ -13,6 +13,7 @@ add_executable(pico-vdp
   blit.c
   cdc.c
   hid.c
+  keymap.c
   main.c
   scan_out.c
   sys80.c

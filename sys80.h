@@ -5,7 +5,7 @@
 
 #include "section.h"
 
-#define KEYBOARD_ROWS 16
+#define KEYBOARD_ROWS 11
 
 #define SYS80_PIO pio1
 
@@ -31,7 +31,7 @@ typedef struct {
   union {
     struct {
       uint8_t kbd_rows[KEYBOARD_ROWS];
-      uint8_t kbd_modifiers;
+      uint8_t kbd_dummy[16-KEYBOARD_ROWS];
       uint8_t mouse_x, mouse_y;
       uint8_t mouse_buttons;
     };

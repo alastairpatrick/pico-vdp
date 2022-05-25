@@ -4,6 +4,10 @@
 
 #define MAX_REPORT  4
 
+extern const uint8_t g_key_map[0x68];
+
+void MapModifierKeys(uint8_t* rows, int modifiers);
+
 static struct
 {
   uint8_t report_count;
@@ -12,22 +16,24 @@ static struct
 
 static void ProcessKeyboardReport(hid_keyboard_report_t const *report)
 {  
-  // TODO: map to MSX or other 80s keyboard matrix.
   uint8_t rows[KEYBOARD_ROWS] = {0};
   for (int i = 0; i < count_of(report->keycode); ++i) {
-    int code = report->keycode[i];
-    if (code == HID_KEY_NONE) {
+    int usb_code = report->keycode[i];
+    if (usb_code >= count_of(g_key_map)) {
       continue;
     }
-    
-    int col = code & 0x7;
-    int row = code >> 3;
-    if (row < KEYBOARD_ROWS) {
-      rows[row] |= 1 << col;
+
+    int mapped_code = g_key_map[usb_code];
+    int col = mapped_code & 0xF;
+    int row = mapped_code >> 4;
+    if (row >= KEYBOARD_ROWS) {
+      continue;
     }
+
+    rows[row] |= 1 << col;
   }
 
-  g_sys80_regs.kbd_modifiers = report->modifier;
+  MapModifierKeys(rows, report->modifier);
 
   for (int i = 0; i < KEYBOARD_ROWS; ++i) {
     g_sys80_regs.kbd_rows[i] = rows[i];
