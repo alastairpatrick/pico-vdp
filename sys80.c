@@ -43,7 +43,7 @@ static void InitSM0() {
 
   // Load high 24-bits of g_registers into Y register to it can be combined with register index to give the address
   // of the register in internal SRAM.
-  SYS80_PIO->txf[0] = ((uint32_t) g_sys80_regs.bytes) >> 8;
+  SYS80_PIO->txf[0] = ((uint32_t) &g_sys80_regs) >> 8;
   pio_sm_exec(SYS80_PIO, 0, pio_encode_pull(false, true));
   pio_sm_exec(SYS80_PIO, 0, pio_encode_mov(pio_y, pio_osr));
 
@@ -58,7 +58,7 @@ static void InitSM1() {
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
   channel_config_set_chain_to(&dma_cfg, g_await_read_channel);
   dma_cfg.ctrl |= DMA_CH1_CTRL_TRIG_HIGH_PRIORITY_BITS;
-  dma_channel_configure(g_read_register_channel, &dma_cfg, &SYS80_PIO->txf[1], g_sys80_regs.bytes, 1, false);
+  dma_channel_configure(g_read_register_channel, &dma_cfg, &SYS80_PIO->txf[1], &g_sys80_regs, 1, false);
 
   // This channel reads a dummy value from the RX FIFO of SM1 then chains to another channel.
   dma_cfg = DefaultChannelConfig(g_await_read_channel);
@@ -78,7 +78,7 @@ static void InitSM2() {
   channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX2);
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
   channel_config_set_chain_to(&dma_cfg, g_await_write_channel);
-  dma_channel_configure(g_write_register_channel, &dma_cfg, g_sys80_regs.bytes, &SYS80_PIO->rxf[2], 1, false);
+  dma_channel_configure(g_write_register_channel, &dma_cfg, &g_sys80_regs, &SYS80_PIO->rxf[2], 1, false);
 
   // This channel reads a dummy value from the RX FIFO of SM2 then chains to another channel.
   dma_cfg = DefaultChannelConfig(g_await_write_channel);

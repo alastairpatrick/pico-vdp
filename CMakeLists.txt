@@ -16,7 +16,6 @@ add_executable(pico-vdp
   main.c
   scan_out.c
   sys80.c
-  sys80_test.c
   video_dma.c
 )
 
@@ -24,7 +23,6 @@ add_executable(pico-vdp
 target_include_directories(pico-vdp PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 
 pico_generate_pio_header(pico-vdp ${CMAKE_CURRENT_LIST_DIR}/sys80.pio)
-pico_generate_pio_header(pico-vdp ${CMAKE_CURRENT_LIST_DIR}/sys80_test.pio)
 pico_generate_pio_header(pico-vdp ${CMAKE_CURRENT_LIST_DIR}/video.pio)
 
 pico_enable_stdio_usb(pico-vdp 0)

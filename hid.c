@@ -1,5 +1,7 @@
 #include "tusb.h"
 
+#include "sys80.h"
+
 #define MAX_REPORT  4
 
 static struct
@@ -9,13 +11,34 @@ static struct
 } g_hid_info[CFG_TUH_HID];
 
 static void ProcessKeyboardReport(hid_keyboard_report_t const *report)
-{
-    (void) report;
+{  
+  // TODO: map to MSX or other 80s keyboard matrix.
+  uint8_t rows[KEYBOARD_ROWS] = {0};
+  for (int i = 0; i < count_of(report->keycode); ++i) {
+    int code = report->keycode[i];
+    if (code == HID_KEY_NONE) {
+      continue;
+    }
+    
+    int col = code & 0x7;
+    int row = code >> 3;
+    if (row < KEYBOARD_ROWS) {
+      rows[row] |= 1 << col;
+    }
+  }
+
+  g_sys80_regs.kbd_modifiers = report->modifier;
+
+  for (int i = 0; i < KEYBOARD_ROWS; ++i) {
+    g_sys80_regs.kbd_rows[i] = rows[i];
+  }
 }
 
 static void ProcessMouseReport(hid_mouse_report_t const * report)
 {
-    (void) report;
+  g_sys80_regs.mouse_buttons = report->buttons;
+  g_sys80_regs.mouse_x += report->x;
+  g_sys80_regs.mouse_y += report->y;
 }
 
 static void ProcessGenericReport(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len)
