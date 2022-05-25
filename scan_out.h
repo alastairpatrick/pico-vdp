@@ -66,7 +66,7 @@ typedef enum {
   SWAP_DOUBLE,
 } SwapMode;
 
-extern volatile bool g_blit_clock_enable;
+bool IsBlitClockEnabled();
 
 void SwapBanks(SwapMode mode);
 bool IsSwapPending();

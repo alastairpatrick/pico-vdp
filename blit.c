@@ -77,24 +77,20 @@ typedef enum {
 static DisplayBank* g_blit_bank;
 static uint16_t g_blit_regs[NUM_BLIT_REGS];
 static uint32_t g_local_bank[LOCAL_BANK_SIZE];
-static uint16_t g_time;
+static uint16_t g_last_mcycle;
 
 static void STRIPED_SECTION MCycle() {
-  do {
-    for (;;) {
-      int current = GetDotTime();
-      int target = g_time;
-      int16_t diff = current - target;
-      if (diff >= 0) {
-        if (diff > 2000) {
-          gpio_put(LED_PIN, true);  // For debugging
-        }
-        break;
-      }
-    }
+  int dot_x, mcycle;
 
-    g_time = g_time + MCYCLE_TIME;
-  } while (!g_blit_clock_enable);
+  do {
+    do {
+      dot_x = GetDotX();
+      mcycle = dot_x / MCYCLE_TIME;
+    } while (mcycle == g_last_mcycle);
+
+    g_last_mcycle = mcycle;
+
+  } while (!IsBlitClockEnabled(dot_x));
 }
 
 static int STRIPED_SECTION PopFifoBlocking8() {
@@ -477,7 +473,6 @@ static void STRIPED_SECTION DoSwap() {
 
 void STRIPED_SECTION BlitMain() {
   g_blit_bank = GetBlitBank();
-  g_time = GetDotTime();
 
   for (;;) {
     int opcode = PopFifoBlocking8();

@@ -20,7 +20,7 @@ static DisplayBank* volatile g_blit_bank = &g_display_bank_a;
 static volatile bool g_swap_pending;
 static volatile SwapMode g_swap_mode;
 
-volatile bool g_blit_clock_enable = false;
+volatile bool g_display_blit_clock_enabled;
 
 static ScanRegisters g_scan_regs;
 static int g_pixels_addr;
@@ -47,6 +47,14 @@ static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000100,
   0b00000110,
 };
+
+bool STRIPED_SECTION IsBlitClockEnabled(int dot_x) {
+  if (dot_x < g_horz_blank_width) {
+    return true;
+  } else {
+    return g_display_blit_clock_enabled;
+  }
+}
 
 void STRIPED_SECTION SwapBanks(SwapMode mode) {
   g_swap_mode = mode;
@@ -132,7 +140,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
 void STRIPED_SECTION ScanOutBeginDisplay() {
   if (g_swap_pending) {
     g_scan_bank = g_blit_bank;
-
+    
     if (g_swap_mode == SWAP_DOUBLE) {
       g_blit_bank = g_scan_bank == &g_display_bank_a ? &g_display_bank_b : &g_display_bank_a;
     }
@@ -168,7 +176,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
     g_display_mode = line->display_mode;
   }
 
-  g_blit_clock_enable = g_swap_mode == SWAP_DOUBLE && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
+  g_display_blit_clock_enabled = g_swap_mode == SWAP_DOUBLE && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
   
   uint32_t* source_palette = g_scan_bank->words + line->palette_addr;
   int palette_mask = line->palette_mask;
@@ -244,7 +252,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {
-  g_blit_clock_enable = true;
+  g_display_blit_clock_enabled = true;
 }
 
 void PutPixel(int x, int y, int color) {

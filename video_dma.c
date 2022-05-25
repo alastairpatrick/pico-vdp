@@ -55,6 +55,8 @@ const VideoTiming g_timing1024_768 = {
   { 768, 3, 6, 29 },
 };
 
+int g_horz_blank_width;
+
 static VideoTiming g_timing;
 static int g_horz_shift, g_vert_shift;
 
@@ -229,15 +231,23 @@ static void STRIPED_SECTION FrameISR() {
 }
 
 static void STRIPED_SECTION LineISR() {
+  if (g_logical_y == 0) {
+    pwm_set_counter(VIDEO_PWM, 0);
+  }
+
   pio_interrupt_clear(PIO, 0);
+
   if (g_logical_y == 0) {
     ScanOutBeginDisplay();
   }
+
   int logical_width = g_timing.horz.display_pixels >> g_horz_shift;
   ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, logical_width);
+
   if (g_logical_y == (g_timing.vert.display_pixels >> g_vert_shift) - 1) {
     ScanOutEndDisplay();
   }
+
   ++g_logical_y;
 }
 
@@ -278,17 +288,25 @@ void SetVideoResolution(int horz_shift, int vert_shift) {
 
   g_horz_shift = horz_shift;
   g_vert_shift = vert_shift;
+  
+  InitControlBlocks();
 
   int pio_clk_div = g_timing.pio_clk_div << horz_shift;
   pio_sm_set_clkdiv_int_frac(PIO, 0, pio_clk_div >> 8, pio_clk_div & 0xFF);
+
+  pwm_set_counter(VIDEO_PWM, 0);
+
+  // Want a period of total_logical_width so set WRAP to total_logical_width-1.
+  g_horz_blank_width = (g_timing.horz.front_porch_pixels + g_timing.horz.sync_pixels + g_timing.horz.back_porch_pixels) >> horz_shift;
+  int total_logical_width = (g_timing.horz.display_pixels >> horz_shift) + g_horz_blank_width;
+  pwm_set_wrap(VIDEO_PWM, total_logical_width - 1);
 
   // +1 because PIO timing is 2 cycles/pixel.
   int pwm_clk_div = pio_clk_div << (vert_shift + 1);
   assert(pwm_clk_div < 65536);  // 8.4 divider
   pwm_set_clkdiv_int_frac(VIDEO_PWM, pwm_clk_div >> 8, (pwm_clk_div >> 4) & 0xF);
-  pwm_set_enabled(VIDEO_PWM, true);
 
-  InitControlBlocks();
+  pwm_set_enabled(VIDEO_PWM, true);
 }
 
 void InitVideoInterrupts() {

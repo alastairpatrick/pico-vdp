@@ -32,13 +32,15 @@ extern const VideoTiming g_timing640_480;
 extern const VideoTiming g_timing800_600;
 extern const VideoTiming g_timing1024_768;
 
+extern int g_horz_blank_width;
+
 void InitVideo(const VideoTiming* timing);
 void SetVideoResolution(int horz_shift, int vert_shift);
 void InitVideoInterrupts();
 void StartVideo();
 
-// Range is [0, 0xFFFF]. Counts logical pixels.
-static inline int STRIPED_SECTION GetDotTime() {
+// Counts logical pixels. Zero is beginning of front porch. Wraps at end of display.
+static inline int STRIPED_SECTION GetDotX() {
   return pwm_get_counter(VIDEO_PWM);
 }
 
