@@ -62,8 +62,11 @@ typedef union {
 static_assert(sizeof(DisplayBank) == DISPLAY_BANK_SIZE * sizeof(uint32_t));
 
 typedef enum {
-  SWAP_SINGLE,
-  SWAP_DOUBLE,
+  SWAP_A_SINGLE,
+  SWAP_B_SINGLE,
+  SWAP_A_DOUBLE,
+  SWAP_B_DOUBLE,
+  SWAP_MASK = 0x3
 } SwapMode;
 
 bool IsBlitClockEnabled();

@@ -54,13 +54,16 @@ typedef enum {
   OPCODE_SET45      = 0x14,
   OPCODE_SET67      = 0x16,
 
-  OPCODE_MOVE       = 0x20,
-
   OPCODE_DSTREAM    = 0x30,
-  OPCODE_LSTREAM    = 0x31,
+  OPCODE_DRSTREAM   = 0x31,
+
+  OPCODE_LSTREAM    = 0x38,
+
+  OPCODE_MOVE       = 0x20,
   OPCODE_QMOVE      = 0x21,
   OPCODE_MOVE2      = 0x26,
   OPCODE_QMOVE2     = 0x27,
+  
   OPCODE_DDCOPY     = 0x32,
   OPCODE_DLCOPY     = 0x33,
   OPCODE_LDCOPY     = 0x34,
@@ -72,7 +75,10 @@ typedef enum {
   OPCODE_SAVE       = 0x90,
   OPCODE_RESTORE    = 0x91,
 
-  OPCODE_SWAP       = 0xFE,
+  OPCODE_SWAP0      = 0xF8,
+  OPCODE_SWAP1      = 0xF9,
+  OPCODE_SWAP2      = 0xFA,
+  OPCODE_SWAP3      = 0xFB,
   OPCODE_NOP        = 0xFF,
 } Opcode;
 
@@ -174,7 +180,19 @@ static void STRIPED_SECTION DoStreamLocal() {
   }
 }
 
+
 static void STRIPED_SECTION DoStreamDisplay() {
+  int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
+  int count = g_blit_regs[BLIT_REG_COUNT];
+
+  for (int i = 0; i < count; ++i) {
+    MCycle();    
+    uint32_t data = PopFifoBlocking32();
+    WriteDisplayRAM(addr + i, data);
+  }
+}
+
+static void STRIPED_SECTION DoStreamDisplayRect() {
   int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
   int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
@@ -462,8 +480,7 @@ static void STRIPED_SECTION DoSave() {
   SetRegister(BLIT_REG_LADDR2, save_addr);
 }
 
-static void STRIPED_SECTION DoSwap() {
-  SwapMode mode = (SwapMode) g_blit_regs[BLIT_REG_FLAGS];
+static void STRIPED_SECTION DoSwap(SwapMode mode) {
   SwapBanks(mode);
 
   while (IsSwapPending()) {
@@ -493,11 +510,20 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_DLCOPY:
       DoDisplayToLocalCopy();
       break;
+    case OPCODE_DSTREAM:
+      DoStreamDisplay();
+      break;
+    case OPCODE_DRSTREAM:
+      DoStreamDisplayRect();
+      break;
     case OPCODE_LDCOPY:
       DoLocalToDisplayCopy();
       break;
     case OPCODE_LLCOPY:
       DoLocalToLocalCopy();
+      break;
+    case OPCODE_LSTREAM:
+      DoStreamLocal();
       break;
     case OPCODE_MOVE:
       DoMove(BLIT_REG_DADDR, PopFifoBlocking16());
@@ -546,14 +572,11 @@ void STRIPED_SECTION BlitMain() {
       SetRegister(6, PopFifoBlocking16());
       SetRegister(7, PopFifoBlocking16());
       break;
-    case OPCODE_SWAP:
-      DoSwap();
-      break;
-    case OPCODE_DSTREAM:
-      DoStreamDisplay();
-      break;
-    case OPCODE_LSTREAM:
-      DoStreamLocal();
+    case OPCODE_SWAP0:
+    case OPCODE_SWAP1:
+    case OPCODE_SWAP2:
+    case OPCODE_SWAP3:
+      DoSwap((SwapMode) (opcode & SWAP_MASK));
       break;
     default:
       break;

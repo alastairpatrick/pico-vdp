@@ -139,10 +139,21 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
 
 void STRIPED_SECTION ScanOutBeginDisplay() {
   if (g_swap_pending) {
-    g_scan_bank = g_blit_bank;
-    
-    if (g_swap_mode == SWAP_DOUBLE) {
-      g_blit_bank = g_scan_bank == &g_display_bank_a ? &g_display_bank_b : &g_display_bank_a;
+    switch (g_swap_mode) {
+    case SWAP_A_SINGLE:
+      g_blit_bank = g_scan_bank = &g_display_bank_a;
+      break;
+    case SWAP_B_SINGLE:
+      g_blit_bank = g_scan_bank = &g_display_bank_b;
+      break;
+    case SWAP_A_DOUBLE:
+      g_scan_bank = &g_display_bank_a;
+      g_blit_bank = &g_display_bank_b;
+      break;
+    case SWAP_B_DOUBLE:
+      g_scan_bank = &g_display_bank_b;
+      g_blit_bank = &g_display_bank_a;
+      break;
     }
 
     g_swap_pending = false;
@@ -176,7 +187,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
     g_display_mode = line->display_mode;
   }
 
-  g_display_blit_clock_enabled = g_swap_mode == SWAP_DOUBLE && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
+  g_display_blit_clock_enabled = g_blit_bank != g_scan_bank && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
   
   uint32_t* source_palette = g_scan_bank->words + line->palette_addr;
   int palette_mask = line->palette_mask;
