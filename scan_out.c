@@ -137,20 +137,52 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
   }
 }
 
+static void SCAN_OUT_INNER_SECTION ScanOutHires16(uint8_t* dest, int width) {
+  for (int x = 0; x < width/16; ++x) {
+    int indices8_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    int indices8_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    ++g_pixels_addr;
+
+    for (int i = 0; i < 8; ++i) {
+      *dest++ = g_palette[indices8_a & 0xF];
+      indices8_a >>= 4;
+
+      *dest++ = g_palette[indices8_b & 0xF];
+      indices8_b >>= 4;
+    }
+  }
+}
+
+static void SCAN_OUT_INNER_SECTION ScanOutLores256(uint8_t* dest, int width) {
+  for (int x = 0; x < width/8; ++x) {
+    int colors4_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    int colors4_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    ++g_pixels_addr;
+
+    for (int i = 0; i < 4; ++i) {
+      *dest++ = colors4_a;
+      colors4_a >>= 8;
+
+      *dest++ = colors4_b;
+      colors4_b >>= 8;
+    }
+  }
+}
+
 void STRIPED_SECTION ScanOutBeginDisplay() {
   if (g_swap_pending) {
     switch (g_swap_mode) {
-    case SWAP_A_SINGLE:
+    case SWAP_SCAN_A_BLIT_A:
       g_blit_bank = g_scan_bank = &g_display_bank_a;
       break;
-    case SWAP_B_SINGLE:
+    case SWAP_SCAN_B_BLIT_B:
       g_blit_bank = g_scan_bank = &g_display_bank_b;
       break;
-    case SWAP_A_DOUBLE:
+    case SWAP_SCAN_A_BLIT_B:
       g_scan_bank = &g_display_bank_a;
       g_blit_bank = &g_display_bank_b;
       break;
-    case SWAP_B_DOUBLE:
+    case SWAP_SCAN_B_BLIT_A:
       g_scan_bank = &g_display_bank_b;
       g_blit_bank = &g_display_bank_a;
       break;
@@ -226,6 +258,12 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
       break;
     case DISPLAY_MODE_LORES_16:
       ScanOutLores16(dest + x_shift, width);
+      break;
+    case DISPLAY_MODE_HIRES_16:
+      ScanOutHires16(dest + x_shift, width);
+      break;
+    case DISPLAY_MODE_LORES_256:
+      ScanOutLores256(dest + x_shift, width);
       break;
     default:
       ScanOutSolid(dest + x_shift, width, AWFUL_MAGENTA);

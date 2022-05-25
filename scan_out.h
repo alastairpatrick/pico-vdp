@@ -62,10 +62,10 @@ typedef union {
 static_assert(sizeof(DisplayBank) == DISPLAY_BANK_SIZE * sizeof(uint32_t));
 
 typedef enum {
-  SWAP_A_SINGLE,
-  SWAP_B_SINGLE,
-  SWAP_A_DOUBLE,
-  SWAP_B_DOUBLE,
+  SWAP_SCAN_A_BLIT_A,
+  SWAP_SCAN_B_BLIT_B,
+  SWAP_SCAN_A_BLIT_B,
+  SWAP_SCAN_B_BLIT_A,
   SWAP_MASK = 0x3
 } SwapMode;
 
