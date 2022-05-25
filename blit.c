@@ -55,10 +55,12 @@ typedef enum {
   OPCODE_SET67      = 0x16,
 
   OPCODE_MOVE       = 0x20,
-  OPCODE_MOVE2      = 0x26,
 
   OPCODE_DSTREAM    = 0x30,
   OPCODE_LSTREAM    = 0x31,
+  OPCODE_QMOVE      = 0x21,
+  OPCODE_MOVE2      = 0x26,
+  OPCODE_QMOVE2     = 0x27,
   OPCODE_DDCOPY     = 0x32,
   OPCODE_DLCOPY     = 0x33,
   OPCODE_LDCOPY     = 0x34,
@@ -502,6 +504,12 @@ void STRIPED_SECTION BlitMain() {
       break;
     case OPCODE_MOVE2:
       DoMove(BLIT_REG_DADDR2, PopFifoBlocking16());
+      break;
+    case OPCODE_QMOVE:
+      DoMove(BLIT_REG_DADDR, PopFifoBlocking8());
+      break;
+    case OPCODE_QMOVE2:
+      DoMove(BLIT_REG_DADDR2, PopFifoBlocking8());
       break;
     case OPCODE_RECT:
       DoRect(PopFifoBlocking8());
