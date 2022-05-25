@@ -4,6 +4,7 @@
 #include "pico/stdlib.h"
 #include "hardware/structs/bus_ctrl.h"
 #include "hardware/structs/syscfg.h"
+#include "tusb.h"
 
 #include "blit.h"
 #include "pins.h"
@@ -13,26 +14,23 @@
 #include "sys80_test.h"
 #include "video_dma.h"
 
-void STRIPED_SECTION BlinkLoop() {
-  gpio_init(LED_PIN);
-  gpio_set_dir(LED_PIN, GPIO_OUT);
-  for (;;) {
-      //gpio_put(LED_PIN, 0);
-      sleep_ms(250);
-      //gpio_put(LED_PIN, 1);
-      sleep_ms(1000);
-  }
-}
 
 void ScanMain() {
+  tusb_init();
+
   InitVideoInterrupts();
   StartVideo();  
-  BlinkLoop();
+
+  for (;;) {
+    tuh_task();
+  }
 }
 
 int main() {
   stdio_init_all();
+
   gpio_init(LED_PIN);
+  gpio_set_dir(LED_PIN, GPIO_OUT);
 
   // Give DMA controller bus priority over processors. For correct latency of read IO requests on the Z80
   // bus interface, these must not be delayed.
