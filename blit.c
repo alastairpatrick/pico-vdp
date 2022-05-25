@@ -61,8 +61,8 @@ typedef enum {
   OPCODE_LLCOPY     = 0x35,
 
   OPCODE_RECT       = 0x80,
-  OPCODE_BLIT       = 0x81,
-  OPCODE_BLITCHAR   = 0x82,
+  OPCODE_BLIT       = 0x88,
+  OPCODE_BLITCHAR   = 0x89,
   OPCODE_SAVE       = 0x90,
   OPCODE_RESTORE    = 0x91,
 
