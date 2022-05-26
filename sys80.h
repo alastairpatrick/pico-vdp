@@ -14,15 +14,17 @@ typedef struct {
   union {
     struct {
       uint8_t dummy[32];
-      uint8_t border_rgb;           // $20
-      uint8_t border_left: 4;       // $21
+      uint8_t lines;                // $20
+      uint8_t border_rgb;           // $21
+      uint8_t border_left: 4;       // $22
       uint8_t border_right: 4;
-      uint8_t sprite_period;        // $22
-      uint8_t sprite_duty;          // $23
-      uint8_t sprite_x;             // $24
-      uint8_t sprite_y;             // $25
-      uint8_t sprite_rgb;           // $26
-      uint16_t sprite_bitmap[8];    // $27
+      uint8_t pad[8];
+      uint8_t sprite_x;             // $2B
+      uint8_t sprite_y;             // $2C
+      uint8_t sprite_period;        // $2D
+      uint8_t sprite_duty;          // $2E
+      uint8_t sprite_rgb;           // $2F
+      uint16_t sprite_bitmap[8];    // $30
     };
     uint8_t rw_bytes[128];
   };

@@ -15,13 +15,6 @@ typedef enum {
 } DisplayMode;
 
 typedef struct {
-  int8_t x_shift: 4;
-  int32_t reserved0;
-} ScanRegisters;
-
-static_assert(sizeof(ScanRegisters) == 8);
-
-typedef struct {
   // WORD #0
 
   // Address/4 of palette for this scanline.
@@ -44,7 +37,8 @@ typedef struct {
   uint8_t reserved2: 4;
 
   int8_t x_shift: 4;
-  int8_t reserved4: 4;
+  bool x_shift_en: 1;
+  int8_t reserved4: 3;
 
   uint8_t reserved5: 8;
 } ScanLine;
@@ -52,10 +46,7 @@ typedef struct {
 static_assert(sizeof(ScanLine) == 8);
 
 typedef union {
-  struct {
-    ScanRegisters regs;
-    ScanLine lines[192];
-  };
+  ScanLine lines[DISPLAY_BANK_SIZE/2];
   uint32_t words[DISPLAY_BANK_SIZE];
 } DisplayBank;
 

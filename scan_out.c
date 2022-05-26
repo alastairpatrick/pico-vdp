@@ -22,9 +22,9 @@ static volatile SwapMode g_swap_mode;
 
 volatile bool g_display_blit_clock_enabled;
 
-static ScanRegisters g_scan_regs;
 static int g_pixels_addr;
 static DisplayMode g_display_mode;
+static int g_x_shift;
 
 static int g_sprite_cycle;
 
@@ -191,29 +191,15 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
     g_swap_pending = false;
   }
 
-  // TODO: this is just for testing.
-  static int count;
-  static int dir = 1;
-  if (count == 0) {
-    if (g_scan_bank->regs.x_shift == 7) {
-      dir = -1;
-    }
-    if (g_scan_bank->regs.x_shift == -8) {
-      dir = 1;
-    }
-    g_scan_bank->regs.x_shift += dir;
-  }
-  count = (count+1) % 5;
-
-  g_scan_regs = g_scan_bank->regs;
-
   if (++g_sprite_cycle >= g_sys80_regs.sprite_period) {
     g_sprite_cycle = 0;
   }
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
-  ScanLine* line = g_scan_bank->lines + y;
+  const int max_lines = 256;
+  int lines_high = g_sys80_regs.lines & (sizeof(DisplayBank) / (max_lines * sizeof(ScanLine)) - 1);
+  ScanLine* line = g_scan_bank->lines + (lines_high * max_lines) + y;
 
   if (line->display_mode_en) {
     g_display_mode = line->display_mode;
@@ -234,65 +220,67 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
     g_pixels_addr = line->pixels_addr;
   }
 
+  if (line->x_shift_en) {
+    g_x_shift = line->x_shift;
+  }
+  
   bool border_left = g_sys80_regs.border_left * 2;
   bool border_right = g_sys80_regs.border_left * 2;
   uint8_t border_rgb = g_sys80_regs.border_rgb;
 
-  int x_shift = g_scan_regs.x_shift + line->x_shift;
-
   switch (g_display_mode) {
     case DISPLAY_MODE_DISABLED:
-      ScanOutSolid(dest + x_shift, width, g_palette[0]);
+      ScanOutSolid(dest + g_x_shift, width, g_palette[0]);
       break;
     case DISPLAY_MODE_HIRES_2:
-      ScanOutHires2(dest + x_shift, width);
+      ScanOutHires2(dest + g_x_shift, width);
       break;
     case DISPLAY_MODE_HIRES_4:
-      ScanOutHires4(dest + x_shift, width);
+      ScanOutHires4(dest + g_x_shift, width);
       break;
     case DISPLAY_MODE_LORES_2:
-      ScanOutLores2(dest + x_shift, width);
+      ScanOutLores2(dest + g_x_shift, width);
       break;
     case DISPLAY_MODE_LORES_4:
-      ScanOutLores4(dest + x_shift, width);
+      ScanOutLores4(dest + g_x_shift, width);
       break;
     case DISPLAY_MODE_LORES_16:
-      ScanOutLores16(dest + x_shift, width);
+      ScanOutLores16(dest + g_x_shift, width);
       break;
     case DISPLAY_MODE_HIRES_16:
-      ScanOutHires16(dest + x_shift, width);
+      ScanOutHires16(dest + g_x_shift, width);
       break;
     case DISPLAY_MODE_LORES_256:
-      ScanOutLores256(dest + x_shift, width);
+      ScanOutLores256(dest + g_x_shift, width);
       break;
     default:
-      ScanOutSolid(dest + x_shift, width, AWFUL_MAGENTA);
+      ScanOutSolid(dest + g_x_shift, width, AWFUL_MAGENTA);
       break;
   }
 
   if (g_sprite_cycle <= g_sys80_regs.sprite_duty) {
-    int sprite_x = g_sys80_regs.sprite_x;
+    int sprite_x = g_sys80_regs.sprite_x * 2;
     int sprite_y = g_sys80_regs.sprite_y;
     int sprite_rgb = g_sys80_regs.sprite_rgb;
 
     if (y >= sprite_y && y < sprite_y + 8) {
       int sprite_bits = g_sys80_regs.sprite_bitmap[y - sprite_y];
       for (int x = 0; x < 16; ++x) {
-        if (sprite_x + x_shift + x >= width) {
+        if (sprite_x + g_x_shift + x >= width) {
           break;
         }
 
         if ((sprite_bits >> x) & 1) {
-          dest[sprite_x + x_shift + x] = sprite_rgb;
+          dest[sprite_x + g_x_shift + x] = sprite_rgb;
         }
       }
     }
   }
 
-  for (int i = 0; i < x_shift; ++i) {
+  for (int i = 0; i < g_x_shift; ++i) {
     dest[i] = g_palette[0];
   }
-  for (int i = width + x_shift; i < width; ++i) {
+  for (int i = width + g_x_shift; i < width; ++i) {
     dest[i] = g_palette[0];
   }
 
@@ -362,8 +350,6 @@ int GetDisplayModeBPP(DisplayMode mode) {
 }
 
 void InitScanOutTest(DisplayMode mode, int width, int height) {
-  g_scan_bank->regs.x_shift = 0;
-
   if (mode >= DISPLAY_MODE_LORES_2) {
     width /= 2;
   }
