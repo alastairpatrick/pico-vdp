@@ -68,10 +68,6 @@ static int g_dma_data_chan, g_dma_ctrl_chan;
 
 static int g_logical_y;
 
-static uint64_t g_sys_clk_div;
-static int32_t g_last_pwm_time;
-static uint64_t g_pwm_time_wraps;
-
 static DMAControlBlock MakeControlBlock(void* read_addr, int transfer_count) {
   DMAControlBlock result = {
     .read_addr = read_addr,
