@@ -16,16 +16,17 @@
 #define MCYCLE_TIME 16
 
 enum {
-  BLIT_FLAG_SRC_XOR      = 0x000F,
-  BLIT_FLAG_UNZIP        = 0x0070,
+  BLIT_FLAG_SRC_BACK     = 0x000F,
+  BLIT_FLAG_SRC_XOR      = 0x00F0,
+  BLIT_FLAG_UNZIP        = 0x0300,
   BLIT_FLAG_UNZIP_OFF    = 0x0000,
-  BLIT_FLAG_UNZIP_2X     = 0x0010,
-  BLIT_FLAG_UNZIP_4X     = 0x0020,
-  BLIT_FLAG_MASKED       = 0x0080,
-  BLIT_FLAG_DEST_LOGIC   = 0x0300,
-  BLIT_FLAG_DEST_AND     = 0x0100,
-  BLIT_FLAG_DEST_OR      = 0x0200,
-  BLIT_FLAG_DEST_XOR     = 0x0300,
+  BLIT_FLAG_UNZIP_2X     = 0x0100,
+  BLIT_FLAG_UNZIP_4X     = 0x0200,
+  BLIT_FLAG_MASKED       = 0x0400,
+  BLIT_FLAG_DEST_LOGIC   = 0x3000,
+  BLIT_FLAG_DEST_AND     = 0x1000,
+  BLIT_FLAG_DEST_OR      = 0x2000,
+  BLIT_FLAG_DEST_XOR     = 0x3000,
 };
 
 enum {
@@ -151,9 +152,13 @@ static uint32_t STRIPED_SECTION ApplyDrawLogic(uint32_t display_colors8, int src
   
   int flags = g_blit_regs[BLIT_REG_FLAGS];
 
-  int src_xor = flags & BLIT_FLAG_SRC_XOR;
+  int src_back = (flags & BLIT_FLAG_SRC_BACK);
+  int src_xor = (flags & BLIT_FLAG_SRC_XOR) >> 4;
   int dest_logic = flags & BLIT_FLAG_DEST_LOGIC;
 
+  if (src_color == 0) {
+    src_color = src_back;
+  }
   src_color ^= src_xor;
 
   switch (dest_logic) {
