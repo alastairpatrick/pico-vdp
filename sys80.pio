@@ -86,8 +86,8 @@ PUBLIC entry:
 
 ; SM 3
 ; 8 instructions
-; Port FIFO (write) Streams data to ring buffer in internal SRAM.
-; Port FIFO (read) Counts bytes written to this port.
+; Port FIFO (write) Streams data to blitter.
+; Port FIFO (read) Returns whether blitter FIFO is ready to receive at least 4 bytes without overflow.
 .PROGRAM sys80_fifo
 .SIDE_SET 3 OPT PINDIRS
 .DEFINE PUBLIC cs_pin 27
