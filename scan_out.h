@@ -12,6 +12,8 @@ typedef enum {
   DISPLAY_MODE_LORES_4,
   DISPLAY_MODE_LORES_16,
   DISPLAY_MODE_LORES_256,
+  DISPLAY_MODE_LORES_TEXT = 14,
+  DISPLAY_MODE_HIRES_TEXT,
 } DisplayMode;
 
 typedef struct {
@@ -27,8 +29,7 @@ typedef struct {
 
   // WORD #1
 
-  DisplayMode display_mode: 3;
-  uint8_t reserved6: 1;
+  DisplayMode display_mode: 4;
   bool pixels_addr_en: 1;
   bool display_mode_en: 1;
   bool next_line_en: 1;
@@ -50,6 +51,7 @@ static_assert(sizeof(ScanLine) == 8);
 typedef union {
   ScanLine lines[DISPLAY_BANK_SIZE/2];
   uint32_t words[DISPLAY_BANK_SIZE];
+  uint8_t bytes[DISPLAY_BANK_SIZE * sizeof(uint32_t)];
 } DisplayBank;
 
 static_assert(sizeof(DisplayBank) == DISPLAY_BANK_SIZE * sizeof(uint32_t));

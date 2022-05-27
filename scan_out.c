@@ -12,6 +12,9 @@
 
 #define AWFUL_MAGENTA 0xC7
 
+#define DISPLAY_PAGE_MASK 0xF
+#define DISPLAY_PAGE_SIZE 512  // 32-bit words
+
 static DisplayBank g_display_bank_a;
 static DisplayBank g_display_bank_b;
 static int g_scan_bank_idx;
@@ -140,8 +143,8 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
 
 static void SCAN_OUT_INNER_SECTION ScanOutHires16(uint8_t* dest, int width) {
   for (int x = 0; x < width/16; ++x) {
-    int indices8_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    int indices8_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    uint32_t indices8_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    uint32_t indices8_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
     ++g_pixels_addr;
 
     for (int i = 0; i < 8; ++i) {
@@ -156,8 +159,8 @@ static void SCAN_OUT_INNER_SECTION ScanOutHires16(uint8_t* dest, int width) {
 
 static void SCAN_OUT_INNER_SECTION ScanOutLores256(uint8_t* dest, int width) {
   for (int x = 0; x < width/8; ++x) {
-    int colors4_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    int colors4_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    uint32_t colors4_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    uint32_t colors4_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
     ++g_pixels_addr;
 
     for (int i = 0; i < 4; ++i) {
@@ -167,6 +170,66 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores256(uint8_t* dest, int width) {
       *dest++ = colors4_b;
       colors4_b >>= 8;
     }
+  }
+}
+
+static void SCAN_OUT_INNER_SECTION ScanOutLoresText(uint8_t* dest, int width, int y) {
+  int start_pixels_addr = g_pixels_addr;
+  int font_base = (g_sys80_regs.font_page * DISPLAY_PAGE_SIZE * sizeof(uint32_t)) + (y & 0x7);
+
+  for (int x = 0; x < width/32; ++x) {
+    uint32_t chars2 = ReadPixelData();
+
+     for (int i = 0; i < 2; ++i) {
+        char c = chars2 & 0xFF;
+        uint8_t colors[2] = {
+          (chars2 >> 8) & 0xF,
+          (chars2 >> 12) & 0xF,
+        };
+        chars2 >>= 16;
+
+        uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
+
+        for (int j = 0; j < 8; ++j) {
+          int color = colors[bits8 & 0x1];
+          *dest++ = *dest++ = g_palette[color];
+          bits8 >>= 1;
+        }
+     }
+  }
+
+  if (y < 7) {
+    g_pixels_addr = start_pixels_addr;
+  }
+}
+
+static void SCAN_OUT_INNER_SECTION ScanOutHiresText(uint8_t* dest, int width, int y) {
+  int start_pixels_addr = g_pixels_addr;
+  int font_base = (g_sys80_regs.font_page * DISPLAY_PAGE_SIZE * sizeof(uint32_t)) + (y & 0x7);
+
+  for (int x = 0; x < width/16; ++x) {
+    uint32_t chars2 = ReadPixelData();
+
+     for (int i = 0; i < 2; ++i) {
+        char c = chars2 & 0xFF;
+        uint8_t colors[2] = {
+          (chars2 >> 8) & 0xF,
+          (chars2 >> 12) & 0xF,
+        };
+        chars2 >>= 16;
+
+        uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
+
+        for (int j = 0; j < 8; ++j) {
+          int color = colors[bits8 & 0x1];
+          *dest++ = g_palette[color];
+          bits8 >>= 1;
+        }
+     }
+  }
+
+  if (y < 7) {
+    g_pixels_addr = start_pixels_addr;
   }
 }
 
@@ -202,8 +265,8 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   if (g_lines_enabled) {
     const int max_lines = 256;
-    int lines_high = g_sys80_regs.lines & (sizeof(DisplayBank) / (max_lines * sizeof(ScanLine)) - 1);
-    ScanLine* line = g_scan_bank->lines + (lines_high * max_lines) + y;
+    int lines_high = g_sys80_regs.lines_page & DISPLAY_PAGE_MASK;
+    ScanLine* line = g_scan_bank->lines + (lines_high * DISPLAY_PAGE_SIZE * sizeof(uint32_t) / sizeof(ScanLine)) + y;
 
     if (line->display_mode_en) {
       g_display_mode = line->display_mode;
@@ -259,6 +322,12 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
       break;
     case DISPLAY_MODE_LORES_256:
       ScanOutLores256(dest + g_x_shift, width);
+      break;
+    case DISPLAY_MODE_LORES_TEXT:
+      ScanOutLoresText(dest + g_x_shift, width, y);
+      break;
+    case DISPLAY_MODE_HIRES_TEXT:
+      ScanOutHiresText(dest + g_x_shift, width, y);
       break;
     default:
       ScanOutSolid(dest + g_x_shift, width, AWFUL_MAGENTA);
