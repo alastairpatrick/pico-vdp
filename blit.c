@@ -55,20 +55,20 @@ typedef enum {
   OPCODE_SET45      = 0x14,
   OPCODE_SET67      = 0x16,
 
-  OPCODE_DSTREAM    = 0x30,
-  OPCODE_DRSTREAM   = 0x31,
-
-  OPCODE_LSTREAM    = 0x38,
-
   OPCODE_MOVE       = 0x20,
   OPCODE_QMOVE      = 0x21,
   OPCODE_MOVE2      = 0x26,
   OPCODE_QMOVE2     = 0x27,
   
+  OPCODE_DSTREAM    = 0x30,
+  OPCODE_DRSTREAM   = 0x31,
   OPCODE_DDCOPY     = 0x32,
-  OPCODE_DLCOPY     = 0x33,
-  OPCODE_LDCOPY     = 0x34,
-  OPCODE_LLCOPY     = 0x35,
+  OPCODE_LDCOPY     = 0x33,
+  OPCODE_DCLEAR      = 0x34,
+
+  OPCODE_LSTREAM    = 0x38,
+  OPCODE_DLCOPY     = 0x39,
+  OPCODE_LLCOPY     = 0x3A,
 
   OPCODE_RECT       = 0x80,
   OPCODE_BLIT       = 0x88,
@@ -185,6 +185,18 @@ static void STRIPED_SECTION DoStreamLocal() {
   }
 }
 
+static void STRIPED_SECTION DoClearDisplay(int data) {
+  data = (data << 8) | data;
+  data = (data << 16) | data;
+
+  int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
+  int count = g_blit_regs[BLIT_REG_COUNT];
+
+  for (int i = 0; i < count; ++i) {
+    MCycle();    
+    WriteDisplayRAM(addr + i, data);
+  }
+}
 
 static void STRIPED_SECTION DoStreamDisplay() {
   int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
@@ -514,6 +526,9 @@ void STRIPED_SECTION BlitMain() {
       break;
     case OPCODE_DLCOPY:
       DoDisplayToLocalCopy();
+      break;
+    case OPCODE_DCLEAR:
+      DoClearDisplay(PopFifoBlocking8());
       break;
     case OPCODE_DSTREAM:
       DoStreamDisplay();

@@ -21,11 +21,12 @@ static volatile bool g_swap_pending;
 static volatile SwapMode g_swap_mode;
 
 volatile bool g_display_blit_clock_enabled;
+static bool g_lines_enabled;
 
 static int g_pixels_addr;
 static DisplayMode g_display_mode;
-static int g_x_shift;
 
+static int g_x_shift;
 static int g_sprite_cycle;
 
 static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
@@ -194,35 +195,41 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   if (++g_sprite_cycle >= g_sys80_regs.sprite_period) {
     g_sprite_cycle = 0;
   }
+
+  g_lines_enabled = true;
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
-  const int max_lines = 256;
-  int lines_high = g_sys80_regs.lines & (sizeof(DisplayBank) / (max_lines * sizeof(ScanLine)) - 1);
-  ScanLine* line = g_scan_bank->lines + (lines_high * max_lines) + y;
+  if (g_lines_enabled) {
+    const int max_lines = 256;
+    int lines_high = g_sys80_regs.lines & (sizeof(DisplayBank) / (max_lines * sizeof(ScanLine)) - 1);
+    ScanLine* line = g_scan_bank->lines + (lines_high * max_lines) + y;
 
-  if (line->display_mode_en) {
-    g_display_mode = line->display_mode;
+    if (line->display_mode_en) {
+      g_display_mode = line->display_mode;
+    }
+    
+    uint32_t* source_palette = g_scan_bank->words + line->palette_addr;
+    int palette_mask = line->palette_mask;
+    for (int i = 0; i < 4; ++i) {
+      if (palette_mask & 1) {
+        g_palette[i] = source_palette[i];
+      }
+      palette_mask >>= 1;
+    }
+
+    if (line->pixels_addr_en) {
+      g_pixels_addr = line->pixels_addr;
+    }
+
+    if (line->x_shift_en) {
+      g_x_shift = line->x_shift;
+    }
+
+    g_lines_enabled = line->next_line_en;
   }
 
   g_display_blit_clock_enabled = g_blit_bank != g_scan_bank && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
-  
-  uint32_t* source_palette = g_scan_bank->words + line->palette_addr;
-  int palette_mask = line->palette_mask;
-  for (int i = 0; i < 4; ++i) {
-    if (palette_mask & 1) {
-      g_palette[i] = source_palette[i];
-    }
-    palette_mask >>= 1;
-  }
-
-  if (line->pixels_addr_en) {
-    g_pixels_addr = line->pixels_addr;
-  }
-
-  if (line->x_shift_en) {
-    g_x_shift = line->x_shift;
-  }
   
   bool border_left = g_sys80_regs.border_left * 2;
   bool border_right = g_sys80_regs.border_left * 2;

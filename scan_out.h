@@ -27,10 +27,12 @@ typedef struct {
 
   // WORD #1
 
+  DisplayMode display_mode: 3;
+  uint8_t reserved6: 1;
   bool pixels_addr_en: 1;
   bool display_mode_en: 1;
-  DisplayMode display_mode: 3;
-  uint8_t reserved3: 3;
+  bool next_line_en: 1;
+  uint8_t reserved3: 1;
 
   // Which color-quads in palette to update on this scanline.
   uint8_t palette_mask: 4;
