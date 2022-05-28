@@ -64,7 +64,7 @@ typedef enum {
   OPCODE_DRSTREAM   = 0x31,
   OPCODE_DDCOPY     = 0x32,
   OPCODE_LDCOPY     = 0x33,
-  OPCODE_DCLEAR      = 0x34,
+  OPCODE_DCLEAR     = 0x34,
 
   OPCODE_LSTREAM    = 0x38,
   OPCODE_DLCOPY     = 0x39,
@@ -76,6 +76,7 @@ typedef enum {
   OPCODE_SAVE       = 0x90,
   OPCODE_RESTORE    = 0x91,
 
+  OPCODE_SCROLL     = 0xF7,
   OPCODE_SWAP0      = 0xF8,
   OPCODE_SWAP1      = 0xF9,
   OPCODE_SWAP2      = 0xFA,
@@ -497,8 +498,12 @@ static void STRIPED_SECTION DoSave() {
   SetRegister(BLIT_REG_LADDR2, save_addr);
 }
 
-static void STRIPED_SECTION DoSwap(SwapMode mode) {
-  SwapBanks(mode);
+static void STRIPED_SECTION DoScroll(int line_idx) {
+  Scroll(line_idx);
+}
+
+static void STRIPED_SECTION DoSwap(SwapMode mode, int line_idx) {
+  SwapBanks(mode, line_idx);
 
   while (IsSwapPending()) {
     MCycle();
@@ -566,6 +571,9 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SAVE:
       DoSave();
       break;
+    case OPCODE_SCROLL:
+      DoScroll(PopFifoBlocking8());
+      break;
     case OPCODE_SET0:
     case OPCODE_SET1:
     case OPCODE_SET2:
@@ -596,7 +604,7 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SWAP1:
     case OPCODE_SWAP2:
     case OPCODE_SWAP3:
-      DoSwap((SwapMode) (opcode & SWAP_MASK));
+      DoSwap((SwapMode) (opcode & SWAP_MASK), PopFifoBlocking8());
       break;
     default:
       break;

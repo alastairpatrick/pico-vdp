@@ -3,4 +3,5 @@
 /.vscode/.cortex*
 
 *.log
-
+*.hex
+*.lst

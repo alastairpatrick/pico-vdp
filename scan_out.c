@@ -22,6 +22,7 @@ static DisplayBank* g_scan_bank = &g_display_bank_a;
 static DisplayBank* volatile g_blit_bank = &g_display_bank_a;
 static volatile bool g_swap_pending;
 static volatile SwapMode g_swap_mode;
+static volatile int g_start_line_idx;
 
 volatile bool g_display_blit_clock_enabled;
 static bool g_lines_enabled;
@@ -60,8 +61,9 @@ bool STRIPED_SECTION IsBlitClockEnabled(int dot_x) {
   }
 }
 
-void STRIPED_SECTION SwapBanks(SwapMode mode) {
+void STRIPED_SECTION SwapBanks(SwapMode mode, int line_idx) {
   g_swap_mode = mode;
+  g_start_line_idx = line_idx;
   g_swap_pending = true;
 }
 
@@ -72,6 +74,13 @@ bool STRIPED_SECTION IsSwapPending() {
 DisplayBank* STRIPED_SECTION GetBlitBank() {
   return g_blit_bank;
 }
+
+void STRIPED_SECTION Scroll(int line_idx) {
+  g_start_line_idx = line_idx;
+}
+
+#pragma GCC push_options
+#pragma GCC optimize("O3")
 
 void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
   for (int x = 0; x < width; ++x) {
@@ -174,64 +183,66 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores256(uint8_t* dest, int width) {
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutLoresText(uint8_t* dest, int width, int y) {
-  int start_pixels_addr = g_pixels_addr;
   int font_base = (g_sys80_regs.font_page * DISPLAY_PAGE_SIZE * sizeof(uint32_t)) + (y & 0x7);
 
-  for (int x = 0; x < width/32; ++x) {
-    uint32_t chars2 = ReadPixelData();
+  for (int x = 0; x < width/16; ++x) {
+    uint32_t char_word = ReadPixelData();
 
-     for (int i = 0; i < 2; ++i) {
-        char c = chars2 & 0xFF;
-        uint8_t colors[2] = {
-          (chars2 >> 8) & 0xF,
-          (chars2 >> 12) & 0xF,
-        };
-        chars2 >>= 16;
+    char c = char_word & 0xFF;
+    uint8_t palette[2] = {
+      g_palette[(char_word >> 12) & 0xF],
+      g_palette[(char_word >> 8) & 0xF],
+    };
+    uint attrs = (char_word >> 16) & 0xFF;
 
-        uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
+    uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
 
-        for (int j = 0; j < 8; ++j) {
-          int color = colors[bits8 & 0x1];
-          *dest++ = *dest++ = g_palette[color];
-          bits8 >>= 1;
-        }
-     }
-  }
-
-  if (y < 7) {
-    g_pixels_addr = start_pixels_addr;
+    #pragma GCC unroll 4
+    for (int j = 0; j < 8; ++j) {
+      *dest++ = *dest++ = palette[bits8 & 0x1];
+      bits8 >>= 1;
+    }
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutHiresText(uint8_t* dest, int width, int y) {
-  int start_pixels_addr = g_pixels_addr;
   int font_base = (g_sys80_regs.font_page * DISPLAY_PAGE_SIZE * sizeof(uint32_t)) + (y & 0x7);
 
-  for (int x = 0; x < width/16; ++x) {
-    uint32_t chars2 = ReadPixelData();
+  for (int x = 0; x < width/8; ++x) {
+    uint32_t char_word = ReadPixelData();
 
-     for (int i = 0; i < 2; ++i) {
-        char c = chars2 & 0xFF;
-        uint8_t colors[2] = {
-          (chars2 >> 8) & 0xF,
-          (chars2 >> 12) & 0xF,
-        };
-        chars2 >>= 16;
+    char c = char_word & 0xFF;
+    uint8_t palette[2] = {
+      g_palette[(char_word >> 12) & 0xF],
+      g_palette[(char_word >> 8) & 0xF],
+    };
+    uint attrs = (char_word >> 16) & 0xFF;
 
-        uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
+    uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
 
-        for (int j = 0; j < 8; ++j) {
-          int color = colors[bits8 & 0x1];
-          *dest++ = g_palette[color];
-          bits8 >>= 1;
-        }
-     }
-  }
-
-  if (y < 7) {
-    g_pixels_addr = start_pixels_addr;
+    #pragma GCC unroll 4
+    for (int j = 0; j < 8; ++j) {
+      *dest++ = palette[bits8 & 0x1];
+      bits8 >>= 1;
+    }
   }
 }
+
+void ScanOutSprite(uint8_t* dest, int width, int y) {
+  int sprite_x = g_sys80_regs.sprite_x * 2;
+  int sprite_rgb = g_sys80_regs.sprite_rgb;
+
+  int sprite_bits = g_sys80_regs.sprite_bitmap[y];
+
+  #pragma GCC unroll 4
+  for (int x = 0; x < 16; ++x) {
+    if ((sprite_bits >> x) & 1) {
+      dest[sprite_x + x] = sprite_rgb;
+    }
+  }
+}
+
+#pragma GCC pop_options
 
 void STRIPED_SECTION ScanOutBeginDisplay() {
   if (g_swap_pending) {
@@ -265,18 +276,21 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   if (g_lines_enabled) {
     const int max_lines = 256;
-    int lines_high = g_sys80_regs.lines_page & DISPLAY_PAGE_MASK;
-    ScanLine* line = g_scan_bank->lines + (lines_high * DISPLAY_PAGE_SIZE * sizeof(uint32_t) / sizeof(ScanLine)) + y;
+    int lines_high = (g_sys80_regs.lines_page & DISPLAY_PAGE_MASK) * DISPLAY_PAGE_SIZE;
+    int lines_low = ((g_start_line_idx + y) & 0xFF) * 2;
+    ScanLine* line = g_scan_bank->lines + (lines_high | lines_low) / 2;
 
     if (line->display_mode_en) {
       g_display_mode = line->display_mode;
     }
     
-    uint32_t* source_palette = g_scan_bank->words + line->palette_addr;
+    uint8_t* source_palette = g_scan_bank->bytes + (line->palette_addr * sizeof(uint32_t));
     int palette_mask = line->palette_mask;
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 16; i += 4) {
       if (palette_mask & 1) {
-        g_palette[i] = source_palette[i];
+        for (int j = 0; j < 4; ++j) {
+          g_palette[i + j] = source_palette[i + j];
+        }
       }
       palette_mask >>= 1;
     }
@@ -335,21 +349,9 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   }
 
   if (g_sprite_cycle <= g_sys80_regs.sprite_duty) {
-    int sprite_x = g_sys80_regs.sprite_x * 2;
     int sprite_y = g_sys80_regs.sprite_y;
-    int sprite_rgb = g_sys80_regs.sprite_rgb;
-
     if (y >= sprite_y && y < sprite_y + 8) {
-      int sprite_bits = g_sys80_regs.sprite_bitmap[y - sprite_y];
-      for (int x = 0; x < 16; ++x) {
-        if (sprite_x + g_x_shift + x >= width) {
-          break;
-        }
-
-        if ((sprite_bits >> x) & 1) {
-          dest[sprite_x + g_x_shift + x] = sprite_rgb;
-        }
-      }
+      ScanOutSprite(dest + g_x_shift, width, y - sprite_y);
     }
   }
 

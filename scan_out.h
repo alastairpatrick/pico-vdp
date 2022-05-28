@@ -64,11 +64,12 @@ typedef enum {
   SWAP_MASK = 0x3
 } SwapMode;
 
-bool IsBlitClockEnabled();
+bool IsBlitClockEnabled(int dot_x);
 
-void SwapBanks(SwapMode mode);
+void SwapBanks(SwapMode mode, int line_idx);
 bool IsSwapPending();
 DisplayBank* GetBlitBank();
+void Scroll(int line_idx);
 
 int GetDisplayModeBPP(DisplayMode mode);
 
