@@ -16,27 +16,6 @@ static struct {
   tuh_hid_report_info_t report_info[MAX_REPORT];
 } g_hid_info[CFG_TUH_HID];
 
-static bool WasKeyPressed(int code) {
-  for (int i = 0; i < count_of(g_last_kbd_report.keycode); ++i) {
-    if (g_last_kbd_report.keycode[i] == code) {
-      return true;
-    }
-  }
-  return false;
-}
-
-static void KeyPressed(int code, int modifiers) {
-  static char foo;
-  if (code >= NUM_HID_CODES)
-    return;
-
-  bool is_shift = modifiers & (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT);
-  char ascii = g_ascii_map[code][is_shift ? 1 : 0];
-
-  (void) ascii;
-  // TODO: pass ascii to the terminal.
-}
-
 static void ProcessKeyboardReport(hid_keyboard_report_t const *report) {
   uint8_t rows[KEYBOARD_ROWS] = {0};
   for (int i = 0; i < count_of(report->keycode); ++i) {
@@ -54,11 +33,6 @@ static void ProcessKeyboardReport(hid_keyboard_report_t const *report) {
     }
 
     rows[row] |= 1 << col;
-
-    // New key press?
-    if (!WasKeyPressed(hid_code)) {
-      KeyPressed(hid_code, report->modifier);
-    }
   }
 
   MapModifierKeys(rows, report->modifier);

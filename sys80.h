@@ -33,7 +33,7 @@ typedef struct {
   // Read-only registers
   union {
     struct {
-      uint8_t kbd_rows[KEYBOARD_ROWS];
+      uint8_t kbd_rows[KEYBOARD_ROWS];  // $80
       uint8_t kbd_dummy[16-KEYBOARD_ROWS];
       uint8_t mouse_x, mouse_y;
       uint8_t mouse_buttons;

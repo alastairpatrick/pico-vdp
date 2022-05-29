@@ -49,8 +49,8 @@ const uint8_t g_key_map[0x68] = {
   0x05, // HID_KEY_5                         0x22
   0x06, // HID_KEY_6                         0x23
   0x07, // HID_KEY_7                         0x24
-  0x08, // HID_KEY_8                         0x25
-  0x09, // HID_KEY_9                         0x26
+  0x10, // HID_KEY_8                         0x25
+  0x11, // HID_KEY_9                         0x26
   0x00, // HID_KEY_0                         0x27
   0x77, // HID_KEY_ENTER                     0x28
   0x72, // HID_KEY_ESCAPE                    0x29

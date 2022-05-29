@@ -11,6 +11,7 @@ _PORT_BLIT              .EQU    $B2
 
 _REG_FONT_PG            .EQU    $21
 _REG_LINES_PG           .EQU    $20
+_REG_KEY_ROWS           .EQU    $80
 _REG_SPRITE_BM          .EQU    $30
 _REG_SPRITE_DUT         .EQU    $2E
 _REG_SPRITE_PRD         .EQU    $2D
@@ -30,39 +31,10 @@ _BCMD_SCROLL            .EQU    $F7
 MAIN:
         CALL    PVDP_INIT
 
-        LD      C, 0
-_LOOP1:
-        LD      DE, $1600
-        CALL    PVDP_SET_CURSOR_POS
-
-        LD      E, C
-        INC     C
-        CALL    PVDP_SET_CHAR_COLOR
-
-        CALL    _DRAW_2_LINES
-
-        LD      E, 3
-        CALL    PVDP_SCROLL
-
-        JR      _LOOP1
-
-
-_DRAW_2_LINES:
-        PUSH    BC
-        PUSH    DE
-
-        LD      B, 128
-_D2L_LOOP:
-        LD      E, B
+_LOOP1:        
+        CALL    PVDP_KEYBOARD_READ
         CALL    PVDP_WRITE_CHAR
-
-        CALL    _DELAY
-
-        DJNZ    _D2L_LOOP
-
-        POP     DE
-        POP     BC
-        RET
+        JR      _LOOP1
 
 _DELAY:
         PUSH    AF
@@ -166,7 +138,7 @@ _LINE_LOOP:
         LD      D, $FF
         LD      C, _REG_SPRITE_RGB
         CALL    _SET_REG_D
-
+        
         POP     HL
         POP     DE
         POP     BC
@@ -190,9 +162,9 @@ PVDP_QUERY:
         RET
 
 
-; Entry:
 ; Exit:
 ;  A: 0
+
 PVDP_RESET:
         PUSH    BC
         PUSH    DE
@@ -221,6 +193,8 @@ PVDP_RESET:
         LD      DE, $0000
         CALL    PVDP_SET_CURSOR_POS
         
+        CALL    PVDP_KEYBOARD_FLUSH
+
         POP     HL
         POP     DE
         POP     BC
@@ -404,11 +378,13 @@ _WC_SKIP_NEWLINE:
 
         RET
 
+
 ; Entry:
 ;  HL: character position
 ; Exit:
 ;  HL: DADDR nibble address in display RAM, accounting for scroll
 ;  A: 0
+
 PVDP_CALC_DADDR:
         ; DADDR = (row + scroll) * WIDTH * 8 + col * 8
         LD      A, (_SCROLL)
@@ -453,12 +429,14 @@ _FILL_TEST:
         XOR     A
         RET
 
+
 ; Entry:
 ;  D: Source Row
 ;  E: Source Column
 ;  L: Count
 ; Exit:
 ;  A: 0
+
 PVDP_COPY:
         PUSH    HL
         PUSH    DE
@@ -494,10 +472,6 @@ PVDP_COPY:
 ;  E: Scroll Distance (signed)
 ; Exit:
 ;  A: 0
-;
-; The cursor retains its position in physical coords, i.e. is now
-; above or below the character it previously obscured, so DBASE
-; needs to be updated but the sprite stays in the right place.
 
 PVDP_SCROLL:
         PUSH    BC
@@ -599,6 +573,254 @@ _CLEAR_LOOP:
         RET
 
 
+; Exit:
+;  A: 0
+
+PVDP_KEYBOARD_FLUSH:
+        XOR     A
+        LD      (_KEY_BUF_BEGIN), A
+        LD      (_KEY_BUF_END), A
+        RET
+
+
+; Exit:
+;  A: Count
+
+PVDP_KEYBOARD_STATUS:
+        PUSH    DE
+
+        CALL    _GET_MODIFIER_KEYS
+        CALL    _SCAN_ROWS
+
+        LD      A, (_KEY_BUF_BEGIN)
+        LD      D, A
+        LD      A, (_KEY_BUF_END)
+        SUB     D
+        AND     _KEY_BUF_SIZE-1
+
+        POP     DE
+        RET
+
+
+; Exit:
+;  A: 0
+;  C: AT Scancode
+;  D: Modifier State
+;  E: ASCII Code
+
+PVDP_KEYBOARD_READ:
+        PUSH    HL
+
+        ; Keep scanning until a key is available in the buffer
+_KEYBOARD_READ_EMPTY:
+        CALL    _GET_MODIFIER_KEYS
+        CALL    _SCAN_ROWS
+
+        LD      A, (_KEY_BUF_BEGIN)
+        LD      E, A
+        LD      A, (_KEY_BUF_END)
+        CP      E
+        JR      Z, _KEYBOARD_READ_EMPTY
+
+        ; Advance buffer begin pointer
+        LD      HL, _KEY_BUF
+        LD      D, 0
+        ADD     HL, DE
+        INC     E
+        INC     E
+        LD      A, E
+        AND     _KEY_BUF_SIZE-1
+        LD      (_KEY_BUF_BEGIN), A
+
+        ; Get ASCII code and modifier state from buffer
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+
+        ; Lookup scancode from ASCII code
+        LD      HL, _SCAN_CODE_LOOKUP
+        LD      C, E
+        LD      B, 0
+        ADD     HL, BC
+        LD      C, (HL)
+
+        XOR     A
+        POP     HL
+        RET
+
+_GET_MODIFIER_KEYS:
+        PUSH    BC
+
+        ; All modifier keys are on row 6
+        LD      C, _REG_KEY_ROWS+6
+        CALL    _GET_REG
+
+        ; Rotate SHIFT, CTRL, ALT into C
+        SRL     A
+        RR      C
+        SRL     A
+        RR      C
+        SRL     A
+        RR      C
+
+        ; Skip CAPS
+        SRL     A
+
+        ; Rotate ALT into C
+        SRL     A
+        RR      C
+
+        ; Rotate C into place
+        SRL     C
+        SRL     C
+        SRL     C
+        SRL     C
+
+        LD      A, C
+        LD      (_MODIFIER_KEYS), A
+
+        POP     BC
+        RET
+
+_SCAN_ROWS:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+
+        LD      B, 10
+        LD      HL, _LAST_KEY_STATE+11
+_SCAN_ROWS_LOOP:
+        ; Get current row state
+        LD      A, B
+        ADD     A, _REG_KEY_ROWS
+        LD      C, A
+        CALL    _GET_REG
+        LD      E, A
+
+        ; Get last row state
+        DEC     HL
+        LD      D, (HL)
+        LD      (HL), E
+
+        ; Find newly pressed keys
+        XOR     D
+        AND     E
+        LD      D, A
+        CALL    NZ, _SCAN_COLS
+
+        DEC     B
+        JP      P, _SCAN_ROWS_LOOP
+
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
+
+; Entry:
+;  B: Row
+;  D: Newly pressed keys
+; Exit:
+;  A: Mask with one bit set corresponding to buffered key
+_SCAN_COLS:
+        PUSH    BC
+        PUSH    DE
+
+        LD      C, 0
+_SCAN_ROW_LOOP:
+        SRL     D
+        CALL    C, _INSERT_KEY
+        INC     C
+        LD      A, D
+        AND     A
+        JR      NZ, _SCAN_ROW_LOOP
+
+        POP     DE
+        POP     BC
+        RET
+
+; Entry:
+;  B: Row
+;  C: Column
+_INSERT_KEY:
+        CALL    _MSX_CODE_TO_ASCII
+        RET     Z
+
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+
+        LD      C, A
+
+        ; Advance END ptr if no overflow
+        LD      A, (_KEY_BUF_END)
+        LD      E, A
+        ADD     A, 2
+        AND     _KEY_BUF_SIZE-1
+        LD      D, A
+
+        LD      A, (_KEY_BUF_BEGIN)
+        CP      D
+        JR      Z, _KEY_PRESSED_DONE
+
+        LD      A, D
+        LD      (_KEY_BUF_END), A
+        LD      HL, _KEY_BUF
+        LD      D, 0
+        ADD     HL, DE
+
+        ; Insert ASCII into buffer
+        LD      A, C
+        LD      (HL), A
+
+        ; Insert modifiers into buffer
+        LD      A, (_MODIFIER_KEYS)
+        INC     HL
+        LD      (HL), A
+
+_KEY_PRESSED_DONE:
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
+
+
+_MSX_CODE_TO_ASCII:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+
+        ; Col in bits 0-2
+        ; Row in bits 3-6
+        SLA     B
+        SLA     B
+        SLA     B
+        LD      A, C
+        OR      B
+
+        ; SHIFT state in bit 7
+        LD      E, A
+        SLA     E
+        LD      A, (_MODIFIER_KEYS)
+        SRL     A
+        RR      E
+
+        LD      HL, _ASCII_LOOKUP
+        LD      D, 0
+        ADD     HL, DE
+        LD      A, (HL)
+        AND     A
+
+        POP     HL
+        POP     DE
+        POP     BC
+        RET
+        
+_GET_REG
+        LD      A, C
+        OUT     (_PORT_RSEL), A
+        IN      A, (_PORT_RDAT)
+        RET
+
 _SET_REG_D:
         LD      A, C
         OUT     (_PORT_RSEL), A
@@ -679,10 +901,51 @@ _DBG_PRINT:
         RST     30H
         RET
 
+_KEY_BUF_SIZE   .EQU 8
+_KEY_BUF:
+        .FILL   _KEY_BUF_SIZE, 0
+_KEY_BUF_BEGIN:
+        .DB     0
+_KEY_BUF_END:
+        .DB     0
+_MODIFIER_KEYS:
+        .DB     0
+_LAST_KEY_STATE:
+        .FILL   11, 0
+
 _ATTRS  .DB     0
 _COLORS .DB     0
 _POS    .DW     0
 _SCROLL .DB     0
+
+_ASCII_LOOKUP:
+        .DB     "01234567"
+        .DB     "89-=\\[];"
+        .DB     $27, $60, $2C, $2E, "/", $F3, "ab"
+        .DB     "cdefghij"
+        .DB     "klmnopqr"
+        .DB     "stuvwxyz"
+        .DB     $00, $00, $00, $00, $00, $E0, $E1, $E2
+        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
+        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
+        .DB     "*+/01234"
+        .DB     "56789-,."
+        .FILL   5*8, 0
+        .DB     ")!@#$%^&"
+        .DB     "*(_+|{}:"
+        .DB     "\"~<>?", $F3, "AB"
+        .DB     "CDEFGHIJ"
+        .DB     "KLMNOPQR"
+        .DB     "STUVWXYZ"
+        .DB     $00, $00, $00, $00, $00, $E0, $E1, $E2
+        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
+        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
+        .DB     "*+/01234"
+        .DB     "56789-,."
+
+_SCAN_CODE_LOOKUP:
+        ; TODO
+        .FILL   256, 0
 
 _COPY_BEGIN:
 _BITMAPS:
