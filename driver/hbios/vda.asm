@@ -18,6 +18,7 @@ _REG_SPRITE_PRD         .EQU    $2D
 _REG_SPRITE_RGB         .EQU    $2F
 _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
+_REG_START_LINE         .EQU    $24
 
 _BCMD_SET_COUNT         .EQU    $03
 _BCMD_SET_DADDR         .EQU    $00
@@ -25,7 +26,6 @@ _BCMD_SET_DADDR2        .EQU    $06
 _BCMD_DCLEAR            .EQU    $34
 _BCMD_DDCOPY            .EQU    $32
 _BCMD_DSTREAM           .EQU    $30
-_BCMD_SCROLL            .EQU    $F7
 
 
 MAIN:
@@ -33,7 +33,17 @@ MAIN:
 
 _LOOP1:        
         CALL    PVDP_KEYBOARD_READ
+
+        LD      A, E
+        CP      $0D
+        JR      Z, _MAIN_SCROLL
+
         CALL    PVDP_WRITE_CHAR
+        JR      _LOOP1
+
+_MAIN_SCROLL:
+        LD      E, 1
+        CALL    PVDP_SCROLL
         JR      _LOOP1
 
 _DELAY:
@@ -519,8 +529,8 @@ _SCROLL_FORWARD:
         SLA     A
         SLA     A
         LD      D, A
-        LD      C, _BCMD_SCROLL
-        CALL    _BLIT_CMD_D
+        LD      C, _REG_START_LINE
+        CALL    _SET_REG_D
 
         ; Bottom row
         LD      HL, (_HEIGHT-1)*256
@@ -538,8 +548,8 @@ _SCROLL_BACKWARD:
         SLA     A
         SLA     A
         LD      D, A
-        LD      C, _BCMD_SCROLL
-        CALL    _BLIT_CMD_D
+        LD      C, _REG_START_LINE
+        CALL    _SET_REG_D
 
         ; Top row
         LD      HL, 0

@@ -69,7 +69,6 @@ bool IsBlitClockEnabled(int dot_x);
 void SwapBanks(SwapMode mode, int line_idx);
 bool IsSwapPending();
 DisplayBank* GetBlitBank();
-void Scroll(int line_idx);
 
 int GetDisplayModeBPP(DisplayMode mode);
 
