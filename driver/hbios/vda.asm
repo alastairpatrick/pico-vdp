@@ -18,6 +18,7 @@ _PORT_RDAT              .EQU    $B0
 _PORT_BLIT              .EQU    $B2
 
 _REG_FONT_PG            .EQU    $21
+_REG_LEDS               .EQU    $25
 _REG_LINES_PG           .EQU    $20
 _REG_KEY_ROWS           .EQU    $80
 _REG_SPRITE_BM          .EQU    $30
@@ -687,7 +688,9 @@ _GET_MODIFIER_KEYS:
         SRL     C
         SRL     C
 
-        LD      A, C
+        LD      A, (_MODIFIER_KEYS)
+        AND     $F0     ; keep lock keys, zero rest
+        OR      C
         LD      (_MODIFIER_KEYS), A
 
         POP     BC
@@ -754,7 +757,11 @@ _SCAN_ROW_LOOP:
 ;  C: Column
 _INSERT_KEY:
         CALL    _MSX_CODE_TO_ASCII
+        AND     A
         RET     Z
+
+        CP      8
+        JP      M, _TOGGLE_LOCK_KEY
 
         PUSH    BC
         PUSH    DE
@@ -794,7 +801,6 @@ _KEY_PRESSED_DONE:
         POP     BC
         RET
 
-
 _MSX_CODE_TO_ASCII:
         PUSH    BC
         PUSH    DE
@@ -819,13 +825,55 @@ _MSX_CODE_TO_ASCII:
         LD      D, 0
         ADD     HL, DE
         LD      A, (HL)
-        AND     A
+        LD      D, A
+        
+        ; Check for letter
+        AND     $DF     ; to upper case
+        CP      'A'
+        JP      M, _NO_CASE_SWAP
+        CP      'Z'+1
+        JP      P, _NO_CASE_SWAP
 
+        ; Check caps lock is enabled
+        LD      A, (_MODIFIER_KEYS)
+        AND     $40
+        JR      Z, _NO_CASE_SWAP
+
+        ; Swap case
+        LD      A, D
+        XOR     $20
+        LD      D, A
+
+_NO_CASE_SWAP:
+        LD      A, D
         POP     HL
         POP     DE
         POP     BC
         RET
-        
+
+_TOGGLE_LOCK_KEY:
+        PUSH    BC
+        PUSH    DE
+
+        ; Shift bits 0-2 to bits 4-6 then toggle the appropriate lock key modifier.
+        SLA     A
+        SLA     A
+        SLA     A
+        SLA     A
+        LD      B, A
+        LD      A, (_MODIFIER_KEYS)
+        XOR     B
+        LD      (_MODIFIER_KEYS), A
+
+        ; Update the LEDs.
+        LD      D, A
+        LD      C, _REG_LEDS
+        CALL    _SET_REG_D
+
+        POP     DE
+        POP     BC
+        RET
+
 _GET_REG
         LD      A, C
         OUT     (_PORT_RSEL), A
@@ -936,7 +984,7 @@ _ASCII_LOOKUP:
         .DB     "cdefghij"
         .DB     "klmnopqr"
         .DB     "stuvwxyz"
-        .DB     $00, $00, $00, $00, $00, $E0, $E1, $E2
+        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2
         .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
         .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
         .DB     "*+/01234"
@@ -948,7 +996,7 @@ _ASCII_LOOKUP:
         .DB     "CDEFGHIJ"
         .DB     "KLMNOPQR"
         .DB     "STUVWXYZ"
-        .DB     $00, $00, $00, $00, $00, $E0, $E1, $E2
+        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2
         .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
         .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
         .DB     "*+/01234"

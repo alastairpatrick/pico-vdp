@@ -8,6 +8,8 @@
 extern const uint8_t g_key_map[0x68];
 static const char g_ascii_map[NUM_HID_CODES][2] =  { HID_KEYCODE_TO_ASCII };
 static hid_keyboard_report_t g_last_kbd_report;
+static int g_led_state;
+static int g_kbd_dev_addr, g_kbd_instance;
 
 void MapModifierKeys(uint8_t* rows, int modifiers);
 
@@ -105,6 +107,25 @@ static void ProcessGenericReport(uint8_t dev_addr, uint8_t instance, uint8_t con
   }
 }
 
+void UpdateKeyboardLEDs() {
+  int leds = g_sys80_regs.leds;
+  uint8_t led_state = 0;
+  if (leds & LED_CAPS_LOCK_MASK) {
+    led_state |= KEYBOARD_LED_CAPSLOCK;
+  }
+  if (leds & LED_NUM_LOCK_MASK) {
+    led_state |= KEYBOARD_LED_NUMLOCK;
+  }
+  if (leds & LED_SCROLL_LOCK_MASK) {
+    led_state |= KEYBOARD_LED_SCROLLLOCK;
+  }
+
+  if (led_state != g_led_state) {
+    g_led_state = led_state;
+    tuh_hid_set_report(g_kbd_dev_addr, g_kbd_instance, 0, HID_REPORT_TYPE_OUTPUT, &led_state, sizeof(led_state));
+  }
+}
+
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {
   // Interface protocol (hid_interface_protocol_enum_t)
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
@@ -120,10 +141,20 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_re
   if (!tuh_hid_receive_report(dev_addr, instance)) {
     assert(false);
   }
+
+  if (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+    g_kbd_dev_addr = dev_addr;
+    g_kbd_instance = instance;
+    g_led_state = 0;
+  }
 }
 
 // Invoked when device with hid interface is un-mounted
 void tuh_hid_umount_cb(uint8_t dev_addr, uint8_t instance) {
+  if (g_kbd_dev_addr == dev_addr && g_kbd_instance == instance) {
+    g_kbd_dev_addr = g_kbd_instance = 0;
+    g_led_state = 0;
+  }
 }
 
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* report, uint16_t len) {

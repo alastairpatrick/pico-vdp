@@ -6,6 +6,7 @@
 #include "hardware/structs/syscfg.h"
 #include "tusb.h"
 
+#include "hid.h"
 #include "blit.h"
 #include "pins.h"
 #include "scan_out.h"
@@ -21,6 +22,7 @@ void ScanMain() {
   StartVideo();  
 
   for (;;) {
+    UpdateKeyboardLEDs();
     tuh_task();
   }
 }

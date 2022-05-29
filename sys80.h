@@ -9,6 +9,12 @@
 
 #define SYS80_PIO pio1
 
+enum {
+  LED_CAPS_LOCK_MASK = 0x40,
+  LED_NUM_LOCK_MASK = 0x20,
+  LED_SCROLL_LOCK_MASK = 0x10,
+};
+
 typedef struct {
   // Read-write registers
   union {
@@ -20,7 +26,8 @@ typedef struct {
       uint8_t border_left: 4;       // $23
       uint8_t border_right: 4;
       uint8_t start_line;           // $24
-      uint8_t pad[6];
+      uint8_t leds;                 // $25
+      uint8_t pad[5];
       uint8_t sprite_x;             // $2B
       uint8_t sprite_y;             // $2C
       uint8_t sprite_period;        // $2D
