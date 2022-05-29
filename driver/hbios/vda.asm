@@ -1,5 +1,13 @@
 .MODULE PVDP
-.ORG    $8000
+
+; Display RAM bank A layout
+; Word address  Nibble address  Pages   Description
+; $0000-$07FF   $0000-$3FFF     0-4     32 text row scroll area
+; $1000-$11FF   $8000-$8FFF     8       256 scanlines
+; $1200-$13FF   $9000-$9FFF     9       256 character bitmaps
+; $1400-$1403   $A000-$A020     10      16 color palette
+
+TERMENABLE      	.SET	TRUE
 
 _WIDTH                  .EQU    64
 _HEIGHT                 .EQU    24
@@ -27,45 +35,25 @@ _BCMD_DCLEAR            .EQU    $34
 _BCMD_DDCOPY            .EQU    $32
 _BCMD_DSTREAM           .EQU    $30
 
-
-MAIN:
-        CALL    PVDP_INIT
-
-_LOOP1:        
-        CALL    PVDP_KEYBOARD_READ
-
-        LD      A, E
-        CP      $0D
-        JR      Z, _MAIN_SCROLL
-
-        CALL    PVDP_WRITE_CHAR
-        JR      _LOOP1
-
-_MAIN_SCROLL:
-        LD      E, 1
-        CALL    PVDP_SCROLL
-        JR      _LOOP1
-
-_DELAY:
-        PUSH    AF
-        PUSH    BC
-        LD      BC, 10000
-_DLOOP:
-        DEC     BC
-        LD      A, B
-        OR      C
-        JR      NZ, _DLOOP
-        POP     BC
-        POP     AF
-        RET
-
-; Display RAM bank A layout
-; Word address  Nibble address  Pages   Description
-; $0000-$07FF   $0000-$3FFF     0-4     32 text row scroll area
-; $1000-$11FF   $8000-$8FFF     8       256 scanlines
-; $1200-$13FF   $9000-$9FFF     9       256 character bitmaps
-; $1400-$1403   $A000-$A020     10      16 color palette
-
+PVDP_FNTBL:
+	.DW	PVDP_INIT
+	.DW	PVDP_QUERY
+	.DW	PVDP_RESET
+	.DW	PVDP_DEVICE
+	.DW	PVDP_SET_CURSOR_STYLE
+	.DW	PVDP_SET_CURSOR_POS
+	.DW	PVDP_SET_CHAR_ATTR
+	.DW	PVDP_SET_CHAR_COLOR
+	.DW	PVDP_WRITE_CHAR
+	.DW	PVDP_FILL
+	.DW	PVDP_COPY
+	.DW	PVDP_SCROLL
+	.DW	PVDP_KEYBOARD_STATUS
+	.DW	PVDP_KEYBOARD_FLUSH
+	.DW	PVDP_KEYBOARD_READ
+#IF (($ - PVDP_FNTBL) != (VDA_FNCNT * 2))
+	.ECHO	"*** INVALID PVDP FUNCTION TABLE ***\n"
+#ENDIF
 
 ; Entry:
 ;  E: Video Mode
@@ -77,6 +65,9 @@ PVDP_INIT:
         PUSH    DE
         PUSH    HL
         
+        ; No idea what this does
+        LD	IY, PVDP_IDAT
+
         ; Initialize lines.
         LD      DE, $8000
         LD      C, _BCMD_SET_DADDR
@@ -149,6 +140,16 @@ _LINE_LOOP:
         LD      C, _REG_SPRITE_RGB
         CALL    _SET_REG_D
         
+        ; Add to VDA dispatch table
+        LD      BC, PVDP_FNTBL
+        LD      DE, PVDP_IDAT
+        CALL    VDA_ADDENT
+
+        ; Initialize terminal emulation
+        LD      BC, PVDP_FNTBL
+        LD      DE, PVDP_IDAT
+        CALL    TERM_ATTACH
+
         POP     HL
         POP     DE
         POP     BC
@@ -195,7 +196,7 @@ PVDP_RESET:
 
         ; Initial VDA state
         LD      D, $0F
-        CALL    PVDP_SET_VIDEO_CURSOR_STYLE
+        CALL    PVDP_SET_CURSOR_STYLE
 
         LD      E, $0F
         CALL    PVDP_SET_CHAR_COLOR
@@ -230,7 +231,7 @@ PVDP_DEVICE:
 ; Exit:
 ;  A: 0
 
-PVDP_SET_VIDEO_CURSOR_STYLE:
+PVDP_SET_CURSOR_STYLE:
         PUSH    BC
         PUSH    DE
         PUSH    HL
@@ -1235,5 +1236,10 @@ _PALETTE:
         .DB     %11111100       ; light cyan
         .DB     %11111111       ; bright white
 _COPY_END:
+
+PVDP_IDAT:
+        .DB     _PORT_RSEL
+        .DB     _PORT_RDAT
+        .DB     _PORT_BLIT
 
 .END
