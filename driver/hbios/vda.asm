@@ -790,8 +790,15 @@ _INSERT_KEY:
         LD      A, C
         LD      (HL), A
 
-        ; Insert modifiers into buffer
+        ; Add keypad modifier - keypad is rows 9 & 10
+        LD      A, B
+        CP      9
         LD      A, (_MODIFIER_KEYS)
+        JP      M, _NOT_KEYPAD
+        OR      $80
+_NOT_KEYPAD:
+
+        ; Insert modifiers into buffer
         INC     HL
         LD      (HL), A
 
