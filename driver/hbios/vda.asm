@@ -822,15 +822,15 @@ _MSX_CODE_TO_ASCII:
         SLA     B
         LD      A, C
         OR      B
-
-        ; SHIFT state in bit 7
         LD      E, A
-        SLA     E
-        LD      A, (_MODIFIER_KEYS)
-        SRL     A
-        RR      E
 
-        LD      HL, _ASCII_LOOKUP
+        ; SHIFT state in bit 1 of modifiers
+        LD      HL, _ASCII_LOWER
+        LD      A, (_MODIFIER_KEYS)
+        AND     $01
+        JR      Z, _IS_LOWER
+        LD      HL, _ASCII_UPPER
+_IS_LOWER:
         LD      D, 0
         ADD     HL, DE
         LD      A, (HL)
@@ -969,19 +969,6 @@ _DBG_PRINT:
         RST     30H
         RET
 
-_ASCII_LOOKUP:          .DB     "01234567"
-                        .DB     "89-=\\[];"
-                        .DB     $27, $60, $2C, $2E, "/", $F3, "ab"
-                        .DB     "cdefghij"
-                        .DB     "klmnopqr"
-                        .DB     "stuvwxyz"
-                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2
-                        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
-                        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
-                        .DB     "*+/01234"
-                        .DB     "56789-,."
-
-_VARS_START:
 _KEY_BUF:               .FILL   _KEY_BUF_SIZE, 0
 _KEY_BUF_BEGIN:         .DB     0
 _KEY_BUF_END:           .DB     0
@@ -993,8 +980,19 @@ _COLORS                 .DB     0
 _POS                    .DW     0
 _SCROLL                 .DB     0
 
-                        .ORG _VARS_START + (5*8)
-                        .DB     ")!@#$%^&"
+_ASCII_LOWER:           .DB     "01234567"
+                        .DB     "89-=\\[];"
+                        .DB     $27, $60, $2C, $2E, "/", $F3, "ab"
+                        .DB     "cdefghij"
+                        .DB     "klmnopqr"
+                        .DB     "stuvwxyz"
+                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2
+                        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
+                        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
+                        .DB     "*+/01234"
+                        .DB     "56789-,."
+
+_ASCII_UPPER:           .DB     ")!@#$%^&"
                         .DB     "*(_+|{}:"
                         .DB     "\"~<>?", $F3, "AB"
                         .DB     "CDEFGHIJ"
