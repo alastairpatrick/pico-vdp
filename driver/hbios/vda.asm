@@ -37,7 +37,7 @@ _BCMD_DCLEAR            .EQU    $34
 _BCMD_DDCOPY            .EQU    $32
 _BCMD_DSTREAM           .EQU    $30
 
-_KEY_BUF_SIZE           .EQU    8
+_KEY_BUF_SIZE           .EQU    16
 _FONT_SIZE              .EQU    $800
 
 PVDP_FNTBL:
@@ -653,6 +653,8 @@ PVDP_KEYBOARD_STATUS:
         LD      A, (_KEY_BUF_END)
         SUB     D
         AND     _KEY_BUF_SIZE-1
+        SRL     A
+        SRL     A
 
         POP     DE
         RET
@@ -682,22 +684,16 @@ _KEYBOARD_READ_EMPTY:
         LD      HL, _KEY_BUF
         LD      D, 0
         ADD     HL, DE
-        INC     E
-        INC     E
         LD      A, E
+        ADD     A, 4
         AND     _KEY_BUF_SIZE-1
         LD      (_KEY_BUF_BEGIN), A
 
-        ; Get ASCII code and modifier state from buffer
+        ; Get ASCII code, modifier state and AT scan code from buffer
         LD      E, (HL)
         INC     HL
         LD      D, (HL)
-
-        ; Lookup scancode from ASCII code
-        LD      HL, _SCAN_CODE_LOOKUP
-        LD      C, E
-        LD      B, 0
-        ADD     HL, BC
+        INC     HL
         LD      C, (HL)
 
         XOR     A
@@ -807,16 +803,16 @@ _INSERT_KEY:
         CP      8
         JP      M, _TOGGLE_LOCK_KEY
 
-        PUSH    BC
         PUSH    DE
         PUSH    HL
 
+        PUSH    BC
         LD      C, A
 
         ; Advance END ptr if no overflow
         LD      A, (_KEY_BUF_END)
         LD      E, A
-        ADD     A, 2
+        ADD     A, 4
         AND     _KEY_BUF_SIZE-1
         LD      D, A
 
@@ -836,6 +832,7 @@ _INSERT_KEY:
 
         ; Add keypad modifier - keypad is rows 9 & 10
         LD      A, B
+        POP     BC
         CP      9
         LD      A, (_MODIFIER_KEYS)
         JP      M, _NOT_KEYPAD
@@ -846,10 +843,14 @@ _NOT_KEYPAD:
         INC     HL
         LD      (HL), A
 
+        ; Insert AT scan code into buffer
+        CALL    _MSX_CODE_TO_AT
+        INC     HL
+        LD      (HL), A
+
 _KEY_PRESSED_DONE:
         POP     HL
         POP     DE
-        POP     BC
         RET
 
 _MSX_CODE_TO_ASCII:
@@ -901,6 +902,19 @@ _NO_CASE_SWAP:
         POP     DE
         POP     BC
         RET
+
+
+_MSX_CODE_TO_AT:
+        PUSH    HL
+
+        LD      HL, _AT_CODES
+        LD      D, 0
+        ADD     HL, DE
+        LD      A, (HL)
+
+        POP     HL
+        RET
+
 
 _TOGGLE_LOCK_KEY:
         PUSH    BC
@@ -1063,31 +1077,44 @@ _COLORS                 .DB     0
 _POS                    .DW     0
 _SCROLL                 .DB     0
 
-_ASCII_LOWER:           .DB     "01234567"
-                        .DB     "89-=\\[];"
-                        .DB     $27, $60, $2C, $2E, "/", $F3, "ab"
-                        .DB     "cdefghij"
-                        .DB     "klmnopqr"
-                        .DB     "stuvwxyz"
-                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2
-                        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
-                        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
-                        .DB     "*+/01234"
-                        .DB     "56789-,."
+; ASCII codes <8 are repurposed to denote modifier keys.
+; ASCII codes >=E0 are assigned as in RomWBW Architecture doc.
+_ASCII_LOWER:           .DB     "01234567"                                      ; row 0
+                        .DB     "89-=\\[];"                                     ; row 1
+                        .DB     $27, $60, $2C, $2E, "/", $F3, "ab"              ; row 2
+                        .DB     "cdefghij"                                      ; row 3
+                        .DB     "klmnopqr"                                      ; row 4
+                        .DB     "stuvwxyz"                                      ; row 5
+                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2          ; row 6
+                        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D          ; row 7
+                        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9          ; row 8
+                        .DB     "*+/01234"                                      ; row 9
+                        .DB     "56789-,."                                      ; row 10
 
-_ASCII_UPPER:           .DB     ")!@#$%^&"
-                        .DB     "*(_+|{}:"
-                        .DB     "\"~<>?", $F3, "AB"
-                        .DB     "CDEFGHIJ"
-                        .DB     "KLMNOPQR"
-                        .DB     "STUVWXYZ"
-                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2
-                        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D
-                        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9
-                        .DB     "*+/01234"
-                        .DB     "56789-,."
+_ASCII_UPPER:           .DB     ")!@#$%^&"                                      ; row 0
+                        .DB     "*(_+|{}:"                                      ; row 1
+                        .DB     "\"~<>?", $F3, "AB"                             ; row 2
+                        .DB     "CDEFGHIJ"                                      ; row 3
+                        .DB     "KLMNOPQR"                                      ; row 4
+                        .DB     "STUVWXYZ"                                      ; row 5
+                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2          ; row 6
+                        .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D          ; row 7
+                        .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9          ; row 8
+                        .DB     "*+/01234"                                      ; row 9
+                        .DB     "56789-,."                                      ; row 10
 
-_SCAN_CODE_LOOKUP:      .FILL   128, 0  ; TODO
+                        ;       0    1    2    3    4    5    6    7    
+_AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          ; row 0
+                        .DB     $3E, $46, $4E, $55, $5D, $54, $5B, $4C          ; row 1
+                        .DB     $76, $0E, $41, $49, $4A, $69, $1C, $32          ; row 2
+                        .DB     $21, $23, $24, $2B, $34, $33, $43, $3B          ; row 3
+                        .DB     $42, $4B, $3A, $31, $44, $4D, $15, $2D          ; row 4
+                        .DB     $1B, $2C, $3C, $2A, $1D, $22, $35, $1A          ; row 5
+                        .DB     $00, $00, $00, $00, $00, $05, $06, $04          ; row 6
+                        .DB     $0C, $03, $76, $0D, $7A, $66, $7D, $5A          ; row 7
+                        .DB     $29, $6C, $70, $71, $6B, $75, $72, $74          ; row 8
+                        .DB     $7C, $79, $4A, $70, $69, $72, $7A, $6B          ; row 9
+                        .DB     $73, $74, $6C, $75, $7D, $7B, $41, $71          ; row 10
 
 ; After the palette data is copied to video memory, it becomes the key buffer.
 _KEY_BUF:
