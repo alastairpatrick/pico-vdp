@@ -76,7 +76,7 @@ PVDP_INIT:
         LD      C, _BCMD_SET_DADDR
         CALL    _BLIT_CMD_DE
 
-        LD      DE, 512 + ((_COPY_END - _COPY_BEGIN)/4)
+        LD      DE, 512
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
@@ -115,11 +115,18 @@ _LINE_LOOP:
         CP      8
         JR      NZ, _LINE_LOOP
 
-        ; Copy font and palette
-        LD      HL, _COPY_BEGIN
-        LD      BC, _COPY_END - _COPY_BEGIN
-        CALL    _BLIT_WRITE
+        ; Copy font
+        LD      DE, $9000
+        LD      HL, _BITMAPS
+        LD      BC, _BITMAPS_END - _BITMAPS
+        CALL    _BLIT_COPY
         
+        ; Copy palette.
+        LD      DE, $A000
+        LD      HL, _PALETTE
+        LD      BC, _PALETTE_END - _PALETTE
+        CALL    _BLIT_COPY
+
         CALL    PVDP_RESET
 
         ; Lines start in page 8
@@ -127,7 +134,7 @@ _LINE_LOOP:
         LD      D, 8
         CALL    _SET_REG_D
 
-        ; Character bitmaps in page 10
+        ; Character bitmaps in page 9
         LD      C, _REG_FONT_PG
         LD      D, 9
         CALL    _SET_REG_D
@@ -943,13 +950,49 @@ _BLIT_CMD_HL:
         OUT     (_PORT_BLIT), A
         RET
 
+_BLIT_COPY:
+        PUSH    DE
+
+        ; Set DADDR
+        PUSH    BC
+        LD      C, _BCMD_SET_DADDR
+        CALL    _BLIT_CMD_DE
+        POP     BC
+
+        ; Set COUNT
+        PUSH    BC
+        LD      D, B
+        LD      E, C
+        SRL     D
+        RR      E
+        SRL     D
+        RR      E
+        LD      C, _BCMD_SET_COUNT
+        CALL    _BLIT_CMD_DE
+
+        LD      C, _BCMD_DSTREAM
+        CALL    _BLIT_CMD
+        POP     BC        
+
+        CALL    _BLIT_WRITE
+
+        POP     DE
+        RET
+
+
 ; Entry:
 ;  HL: source ptr
 ;  BC: byte count >=4, multiple of 4 
 _BLIT_WRITE:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+
         LD      D, B
         LD      B, C
-        JR      NZ, _BLIT_WRITE_SKIP
+        LD      A, C
+        AND     A
+        JR      Z, _BLIT_WRITE_SKIP
         INC     D
 _BLIT_WRITE_SKIP:
         LD      C, _PORT_BLIT
@@ -962,6 +1005,10 @@ _BLIT_WRITE_LOOP:
         JR      NZ, _BLIT_WRITE_LOOP
         DEC     D
         JR      NZ, _BLIT_WRITE_LOOP
+
+        POP     HL
+        POP     DE
+        POP     BC
         RET
 
 _DBG_PRINT:
@@ -1006,7 +1053,6 @@ _ASCII_UPPER:           .DB     ")!@#$%^&"
 
 _SCAN_CODE_LOOKUP:      .FILL   256, 0  ; TODO
 
-_COPY_BEGIN:
 _BITMAPS:               .DB     $00, $00, $00, $00, $00, $00, $00, $00
                         .DB     $00, $00, $00, $00, $00, $00, $00, $00
                         .DB     $00, $00, $00, $00, $00, $00, $00, $00
@@ -1264,7 +1310,8 @@ _BITMAPS:               .DB     $00, $00, $00, $00, $00, $00, $00, $00
                         .DB     $07, $0C, $0C, $38, $0C, $0C, $07, $00
                         .DB     $6E, $3B, $00, $00, $00, $00, $00, $00
                         .DB     $00, $00, $00, $00, $00, $00, $00, $00
-        
+_BITMAPS_END:
+
 _PALETTE:               .DB     %00000000       ; black
                         .DB     %00000111       ; red
                         .DB     %00111000       ; green
@@ -1281,7 +1328,7 @@ _PALETTE:               .DB     %00000000       ; black
                         .DB     %11100111       ; light magenta
                         .DB     %11111100       ; light cyan
                         .DB     %11111111       ; bright white
-_COPY_END:
+_PALETTE_END:
 
 PVDP_IDAT:
         .DB     _PORT_RSEL
