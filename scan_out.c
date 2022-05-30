@@ -193,10 +193,8 @@ static void SCAN_OUT_INNER_SECTION ScanOutLoresText(uint8_t* dest, int width, in
 
     uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
 
-    #pragma GCC unroll 4
     for (int j = 0; j < 8; ++j) {
-      *dest++ = *dest++ = palette[bits8 & 0x1];
-      bits8 >>= 1;
+      *dest++ = *dest++ = palette[(bits8 & (0x80 >> j)) == 0];
     }
   }
 }
@@ -209,17 +207,16 @@ static void SCAN_OUT_INNER_SECTION ScanOutHiresText(uint8_t* dest, int width, in
 
     char c = char_word & 0xFF;
     uint8_t palette[2] = {
-      g_palette[(char_word >> 12) & 0xF],
       g_palette[(char_word >> 8) & 0xF],
+      g_palette[(char_word >> 12) & 0xF],
     };
     uint attrs = (char_word >> 16) & 0xFF;
 
     uint8_t bits8 = g_scan_bank->bytes[font_base + c * 8];
 
-    #pragma GCC unroll 4
+    #pragma GCC unroll 8
     for (int j = 0; j < 8; ++j) {
-      *dest++ = palette[bits8 & 0x1];
-      bits8 >>= 1;
+      *dest++ = palette[(bits8 & (0x80 >> j)) == 0];
     }
   }
 }

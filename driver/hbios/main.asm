@@ -39,6 +39,19 @@ TERM_ATTACH:
 TRUE        .EQU  1
 FALSE       .EQU  0
 TERMENABLE  .EQU  FALSE
-VDA_FNCNT   .EQU 15
+USELZSA2    .EQU  TRUE
+VDA_FNCNT   .EQU  15
 
 #INCLUDE "vda.asm"
+
+#IFDEF USEFONT8X8
+FONT8X8:
+  #IF USELZSA2
+    #INCLUDE "font8x8c.asm"
+    #INCLUDE "unlzsa2s.asm"
+  #ELSE
+    #INCLUDE "font8x8u.asm"
+  #ENDIF
+#ENDIF
+
+.END
