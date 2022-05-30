@@ -985,6 +985,11 @@ _BLIT_CMD_HL:
         OUT     (_PORT_BLIT), A
         RET
 
+; Entry:
+;  HL: source ptr
+;  DE: destination address (of nibble)
+;  BC: byte count >=4, multiple of 4 
+
 _BLIT_COPY:
         PUSH    DE
 
@@ -1018,6 +1023,7 @@ _BLIT_COPY:
 ; Entry:
 ;  HL: source ptr
 ;  BC: byte count >=4, multiple of 4 
+
 _BLIT_WRITE:
         PUSH    BC
         PUSH    DE
@@ -1046,12 +1052,7 @@ _BLIT_WRITE_LOOP:
         POP     BC
         RET
 
-_DBG_PRINT:
-        LD      C, $06
-        RST     30H
-        RET
 
-_KEY_BUF:               .FILL   _KEY_BUF_SIZE, 0
 _KEY_BUF_BEGIN:         .DB     0
 _KEY_BUF_END:           .DB     0
 _MODIFIER_KEYS:         .DB     0
@@ -1086,8 +1087,10 @@ _ASCII_UPPER:           .DB     ")!@#$%^&"
                         .DB     "*+/01234"
                         .DB     "56789-,."
 
-_SCAN_CODE_LOOKUP:      .FILL   256, 0  ; TODO
+_SCAN_CODE_LOOKUP:      .FILL   128, 0  ; TODO
 
+; After the palette data is copied to video memory, it becomes the key buffer.
+_KEY_BUF:
 _PALETTE:               .DB     %00000000       ; black
                         .DB     %00000111       ; red
                         .DB     %00111000       ; green
