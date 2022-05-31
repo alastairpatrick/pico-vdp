@@ -73,6 +73,23 @@ PVDP_INIT:
         ; No idea what this does
         LD	IY, PVDP_IDAT
 
+        ; Wait until VDP completes reset.
+_READY_LOOP:
+        LD      A, _REG_LEDS
+        OUT     (_PORT_RSEL), A
+
+        LD      A, $55
+        OUT     (_PORT_RDAT), A
+        IN      A, (_PORT_RDAT)
+        CP      $55
+        JR      NZ, _READY_LOOP
+
+        LD      A, $AA
+        OUT     (_PORT_RDAT), A
+        IN      A, (_PORT_RDAT)
+        CP      $AA
+        JR      NZ, _READY_LOOP
+
         ; Initialize lines.
         LD      DE, $8000
         LD      C, _BCMD_SET_DADDR
@@ -147,15 +164,16 @@ _LINE_LOOP:
         LD      D, $FF
         LD      C, _REG_SPRITE_RGB
         CALL    _SET_REG_D
-        
+
         ; Add to VDA dispatch table
         LD      BC, PVDP_FNTBL
         LD      DE, PVDP_IDAT
         CALL    VDA_ADDENT
 
         ; Initialize terminal emulation
-        LD      BC, PVDP_FNTBL
-        LD      DE, PVDP_IDAT
+        LD      C, A
+        LD      DE, PVDP_FNTBL
+        LD      HL, PVDP_IDAT
         CALL    TERM_ATTACH
 
         POP     HL
