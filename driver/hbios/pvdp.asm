@@ -675,6 +675,7 @@ PVDP_KEYBOARD_STATUS:
         SRL     A
 
         POP     DE
+        JP      Z, CIO_IDLE
         RET
 
 
@@ -818,9 +819,6 @@ _INSERT_KEY:
         AND     A
         RET     Z
 
-        CP      8
-        JP      M, _TOGGLE_LOCK_KEY
-
         PUSH    DE
         PUSH    HL
 
@@ -885,6 +883,10 @@ _MSX_CODE_TO_ASCII:
         OR      B
         LD      E, A
 
+        ; Toggle CAPS? (row 6 col 3)
+        CP      6*8+3
+        CALL    Z, _TOGGLE_CAPS_LOCK_KEY
+
         ; SHIFT state in bit 1 of modifiers
         LD      HL, _ASCII_LOWER
         LD      A, (_MODIFIER_KEYS)
@@ -900,21 +902,33 @@ _IS_LOWER:
         ; Check for letter
         AND     $DF     ; to upper case
         CP      'A'
-        JP      M, _NO_CASE_SWAP
+        JP      M, _RETURN_ASCII
         CP      'Z'+1
-        JP      P, _NO_CASE_SWAP
+        JP      P, _RETURN_ASCII
 
+        ; Check for CTRL code
+        LD      A, (_MODIFIER_KEYS)
+        AND     $02
+        JR      Z, _CHECK_CAPS_LOCK
+
+        ; Retain only low 5-bits of ASCII code, yielding 0-26.
+        LD      A, D
+        AND     $1F
+        LD      D, A
+        JR      _RETURN_ASCII
+
+_CHECK_CAPS_LOCK:
         ; Check caps lock is enabled
         LD      A, (_MODIFIER_KEYS)
         AND     $40
-        JR      Z, _NO_CASE_SWAP
+        JR      Z, _RETURN_ASCII
 
         ; Swap case
         LD      A, D
         XOR     $20
         LD      D, A
 
-_NO_CASE_SWAP:
+_RETURN_ASCII:
         LD      A, D
         POP     HL
         POP     DE
@@ -934,18 +948,12 @@ _MSX_CODE_TO_AT:
         RET
 
 
-_TOGGLE_LOCK_KEY:
+_TOGGLE_CAPS_LOCK_KEY:
         PUSH    BC
         PUSH    DE
 
-        ; Shift bits 0-2 to bits 4-6 then toggle the appropriate lock key modifier.
-        SLA     A
-        SLA     A
-        SLA     A
-        SLA     A
-        LD      B, A
         LD      A, (_MODIFIER_KEYS)
-        XOR     B
+        XOR     $40
         LD      (_MODIFIER_KEYS), A
 
         ; Update the LEDs.
@@ -1095,7 +1103,6 @@ _COLORS                 .DB     0
 _POS                    .DW     0
 _SCROLL                 .DB     0
 
-; ASCII codes <8 are repurposed to denote modifier keys.
 ; ASCII codes >=E0 are assigned as in RomWBW Architecture doc.
 _ASCII_LOWER:           .DB     "01234567"                                      ; row 0
                         .DB     "89-=\\[];"                                     ; row 1
@@ -1103,7 +1110,7 @@ _ASCII_LOWER:           .DB     "01234567"                                      
                         .DB     "cdefghij"                                      ; row 3
                         .DB     "klmnopqr"                                      ; row 4
                         .DB     "stuvwxyz"                                      ; row 5
-                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2          ; row 6
+                        .DB     $00, $00, $00, $00, $00, $E0, $E1, $E2          ; row 6
                         .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D          ; row 7
                         .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9          ; row 8
                         .DB     "*+/01234"                                      ; row 9
@@ -1115,7 +1122,7 @@ _ASCII_UPPER:           .DB     ")!@#$%^&"                                      
                         .DB     "CDEFGHIJ"                                      ; row 3
                         .DB     "KLMNOPQR"                                      ; row 4
                         .DB     "STUVWXYZ"                                      ; row 5
-                        .DB     $00, $00, $00, $04, $00, $E0, $E1, $E2          ; row 6
+                        .DB     $00, $00, $00, $00, $00, $E0, $E1, $E2          ; row 6
                         .DB     $E3, $E4, $1B, $09, $F5, $08, $F4, $0D          ; row 7
                         .DB     $20, $F2, $F0, $F1, $F8, $F6, $F7, $F9          ; row 8
                         .DB     "*+/01234"                                      ; row 9

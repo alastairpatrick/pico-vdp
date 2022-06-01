@@ -32,6 +32,7 @@ _DLOOP:
         RET
 
 ; Stubs for RomWBW API
+CIO_IDLE:
 VDA_ADDENT:
 TERM_ATTACH:
         RET
