@@ -11,13 +11,11 @@
 #include "sys80.h"
 #include "video_dma.h"
 
-#define NUM_BLIT_REGS 8
+#define NUM_BLIT_REGS 16
 #define LOCAL_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
 #define MCYCLE_TIME 16
 
 enum {
-  BLIT_FLAG_SRC_BACK     = 0x000F,
-  BLIT_FLAG_SRC_XOR      = 0x00F0,
   BLIT_FLAG_UNZIP        = 0x0300,
   BLIT_FLAG_UNZIP_OFF    = 0x0000,
   BLIT_FLAG_UNZIP_2X     = 0x0100,
@@ -38,6 +36,7 @@ enum {
   BLIT_REG_FLAGS         = 5,  // 16-bit. Miscellaneous flags.
   BLIT_REG_DADDR2        = 6,  // 16-bit. Address of nibble in display bank.
   BLIT_REG_LADDR2        = 7,  // 16-bit. Address of a 32-bit word in local bank.
+  BLIT_REG_CMAP          = 8,  // 16-bit. Array of colors colors 0-3 are remapped to.
 };
 
 typedef enum {
@@ -49,6 +48,7 @@ typedef enum {
   OPCODE_SET5,
   OPCODE_SET6,
   OPCODE_SET7,
+  OPCODE_SET8,
 
   OPCODE_SET01      = 0x10,
   OPCODE_SET23      = 0x12,
@@ -72,7 +72,6 @@ typedef enum {
 
   OPCODE_RECT       = 0x80,
   OPCODE_BLIT       = 0x88,
-  OPCODE_BLITCHAR   = 0x89,
   OPCODE_SAVE       = 0x90,
   OPCODE_RESTORE    = 0x91,
 
@@ -145,21 +144,29 @@ static void STRIPED_SECTION WriteDisplayRAM(unsigned addr, uint32_t data) {
   g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
 }
 
+static void STRIPED_SECTION GetDimensions(int* width, int* height) {
+  int count = g_blit_regs[BLIT_REG_COUNT];
+  *width = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
+  if (*width == 0) {
+    *width = 0x100;
+  }
+  *height = g_blit_regs[BLIT_REG_COUNT] >> 8;
+  if (*height == 0) {
+    *height = 0x100;
+  }
+}
+
 static uint32_t STRIPED_SECTION ApplyDrawLogic(uint32_t display_colors8, int src_color, int display_shift) {
   const int display_bits_per_pixel = 4;
   const int display_pixels_per_word = 32 / display_bits_per_pixel;
   const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
   
   int flags = g_blit_regs[BLIT_REG_FLAGS];
-
-  int src_back = (flags & BLIT_FLAG_SRC_BACK);
-  int src_xor = (flags & BLIT_FLAG_SRC_XOR) >> 4;
   int dest_logic = flags & BLIT_FLAG_DEST_LOGIC;
 
-  if (src_color == 0) {
-    src_color = src_back;
+  if (src_color < 4) {
+    src_color = (g_blit_regs[BLIT_REG_CMAP] >> (src_color*4)) & 0xF;
   }
-  src_color ^= src_xor;
 
   switch (dest_logic) {
     case BLIT_FLAG_DEST_AND:
@@ -211,14 +218,13 @@ static void STRIPED_SECTION DoStreamDisplay() {
 
 static void STRIPED_SECTION DoStreamDisplayRect() {
   int addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
-  int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
 
-  int w = counts & 0xFF;
-  int h = counts >> 8;
+  int width, height;
+  GetDimensions(&width, &height);
 
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
       MCycle();    
       uint32_t data = PopFifoBlocking32();
       WriteDisplayRAM(addr + x, data);
@@ -316,23 +322,17 @@ static void STRIPED_SECTION DoBlit() {
   Blit(g_blit_regs[BLIT_REG_LADDR]);
 }
 
-static void STRIPED_SECTION DoBlitChar(int c) {
-  int value = g_blit_regs[BLIT_REG_LADDR];
-  Blit((value & 0xFE00) | (c << 1));
-}
-
 // TODO: should there be a version of this command that copies in reverse in case of overlap?
 static void STRIPED_SECTION DoDisplayToDisplayCopy() {
   int dest_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
-  int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int source_addr = g_blit_regs[BLIT_REG_DADDR2] >> 3;
 
-  int w = counts & 0xFF;
-  int h = counts >> 8;
+  int width, height;
+  GetDimensions(&width, &height);
 
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
       MCycle();    
       uint32_t data = ReadDisplayRAM(source_addr + x);
       WriteLocalRAM(dest_addr + x, data);
@@ -345,15 +345,14 @@ static void STRIPED_SECTION DoDisplayToDisplayCopy() {
 
 static void STRIPED_SECTION DoDisplayToLocalCopy() {
   int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
-  int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int local_addr = g_blit_regs[BLIT_REG_LADDR];
 
-  int w = counts & 0xFF;
-  int h = counts >> 8;
+  int width, height;
+  GetDimensions(&width, &height);
 
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
       MCycle();    
       uint32_t data = ReadDisplayRAM(display_addr + x);
       WriteLocalRAM(local_addr++, data);
@@ -365,15 +364,14 @@ static void STRIPED_SECTION DoDisplayToLocalCopy() {
 
 static void STRIPED_SECTION DoLocalToDisplayCopy() {
   int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
-  int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int local_addr = g_blit_regs[BLIT_REG_LADDR];
 
-  int w = counts & 0xFF;
-  int h = counts >> 8;
+  int width, height;
+  GetDimensions(&width, &height);
 
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
       MCycle();    
       uint32_t data = ReadLocalRAM(local_addr++);
       WriteDisplayRAM(display_addr + x, data);
@@ -401,18 +399,18 @@ static void STRIPED_SECTION DoMove(int reg_idx, int operand) {
   SetRegister(reg_idx, value + operand);
 }
 
-static void STRIPED_SECTION DoRect(int color) {
+static void STRIPED_SECTION DoRect() {
   const int display_bits_per_pixel = 4;
   const int display_pixels_per_word = 32 / display_bits_per_pixel;
   const int display_pixel_mask = (1 << display_bits_per_pixel) - 1;
   
   int display_addr = g_blit_regs[BLIT_REG_DADDR];
-  int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
+  int color = g_blit_regs[BLIT_REG_CMAP] & 0xF;
 
-  int width = counts & 0xFF;
-  int height = counts >> 8;
-
+  int width, height;
+  GetDimensions(&width, &height);
+  
   for (int y = 0; y < height; ++y) {
     int display_word_addr = display_addr / display_pixels_per_word;
 
@@ -474,22 +472,21 @@ static void STRIPED_SECTION DoRestore() {
 
 static void STRIPED_SECTION DoSave() {
   int display_addr = g_blit_regs[BLIT_REG_DADDR] >> 3;
-  int counts = g_blit_regs[BLIT_REG_COUNT];
   int pitch = g_blit_regs[BLIT_REG_DPITCH];
   int save_addr = g_blit_regs[BLIT_REG_LADDR2];
 
-  int w = counts & 0xFF;
-  int h = counts >> 8;
+  int width, height;
+  GetDimensions(&width, &height);
 
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
       MCycle();    
       uint32_t data = ReadDisplayRAM(display_addr + x);
       WriteLocalRAM(--save_addr, data);
     }
     
     MCycle();
-    WriteLocalRAM(--save_addr, display_addr | (w << 16));
+    WriteLocalRAM(--save_addr, display_addr | (width << 16));
 
     display_addr += pitch;
   }
@@ -517,9 +514,6 @@ void STRIPED_SECTION BlitMain() {
     switch (opcode) {
     case OPCODE_BLIT:
       DoBlit();
-      break;
-    case OPCODE_BLITCHAR:
-      DoBlitChar(PopFifoBlocking8());
       break;
     case OPCODE_DDCOPY:
       DoDisplayToDisplayCopy();
@@ -558,7 +552,7 @@ void STRIPED_SECTION BlitMain() {
       DoMove(BLIT_REG_DADDR2, PopFifoBlocking8());
       break;
     case OPCODE_RECT:
-      DoRect(PopFifoBlocking8());
+      DoRect();
       break;
     case OPCODE_RESTORE:
       DoRestore();
@@ -574,6 +568,7 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SET5:
     case OPCODE_SET6:
     case OPCODE_SET7:
+    case OPCODE_SET8:
       SetRegister(opcode, PopFifoBlocking16());
       break;
     case OPCODE_SET01:
