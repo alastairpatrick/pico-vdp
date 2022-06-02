@@ -19,8 +19,10 @@ _LOOP1:
 
         CALL    PVDP_WRITE_CHAR
 
-        LD      E, C
-        INC     C
+        LD      A, (_COL)
+        LD      E, A
+        INC     A
+        LD      (_COL), A
         CALL    PVDP_SET_CHAR_COLOR
 
         JR      _LOOP1
@@ -42,6 +44,8 @@ _MAIN_SCROLL_COPY:
         CALL    PVDP_COPY
         JR      _LOOP1
         
+_COL:   .DB     0
+
 _DELAY:
         PUSH    AF
         PUSH    BC

@@ -112,11 +112,6 @@ _READY_LOOP:
         LD      A, _BCMD_DSTREAM
         CALL    _BLIT_COPY
 
-        ; Initialize CMAP
-        LD      DE, %1111110000110000
-        LD      C, _BCMD_SET_CMAP
-        CALL    _BLIT_CMD_DE
-
         ; Lines start in page 12
         LD      C, _REG_LINES_PG
         LD      D, 12
@@ -420,10 +415,11 @@ _UPDATE_SPRITE:
         LD      C, _REG_SPRITE_Y
         CALL    _SET_REG_D
 
-        ; SPRITE_X = col*3
+        ; SPRITE_X = col*3+8
         LD      A, E
         ADD     A, E
         ADD     A, E
+        ADD     A, 8
         LD      D, A
         LD      C, _REG_SPRITE_X
         CALL    _SET_REG_D
@@ -450,8 +446,41 @@ PVDP_SET_CHAR_ATTR:
 ;  A: 0
 
 PVDP_SET_CHAR_COLOR:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+
         LD      A, E
         LD      (_COLORS), A
+
+        ; Reduce to 2-bit foreground intensity in top 2 bits and 2-bit background intensity in bottom 2
+        LD      A, E
+        AND     $0C
+        SLA     A
+        LD      D, A
+        LD      A, E
+        AND     $C0
+        RLC     A
+        RLC     A
+        RLC     A
+        OR      D
+
+        ; Lookup the one of 16 CMAPs for this color combination.
+        LD      D, 0
+        LD      E, A
+        LD      HL, _CMAPS
+        ADD     HL, DE
+        LD      E, (HL)
+        INC     HL
+        LD      D, (HL)
+
+        LD      C, _BCMD_SET_CMAP
+        CALL    _BLIT_CMD_DE
+
+        POP     HL
+        POP     DE
+        POP     BC
+        
         XOR     A
         RET
 
@@ -510,7 +539,7 @@ _WC_SKIP_NEWLINE:
 ;  HL: DADDR nibble address in display RAM, accounting for scroll
 
 _CALC_DADDR:
-        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * _CHAR_WIDTH/2
+        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * _CHAR_WIDTH/2 + 8
         LD      A, (_SCROLL)
         ADD     A, H
         CP      _HEIGHT
@@ -521,6 +550,7 @@ _NO_CALC_DADDR_WRAP:
         LD      A, L
         ADD     A, L
         ADD     A, L
+        ADD     A, 8
         LD      L, A
         SLA     H
         SLA     H
@@ -681,7 +711,7 @@ _SCROLL_CLEAR:
         LD      C, _BCMD_SET_DADDR
         CALL    _BLIT_CMD_HL
 
-        LD      DE, $0800
+        LD      DE, $08F0
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
@@ -1193,11 +1223,29 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
                         .DB     $7C, $79, $4A, $70, $69, $72, $7A, $6B          ; row 9
                         .DB     $73, $74, $6C, $75, $7D, $7B, $41, $71          ; row 10
 
+; FFFFFFBBBBFFBBBB
+_CMAPS                  .DW     %0000000000000000                               ; FG=00, BG=00
+                        .DW     %0000000101000101                               ; FG=00, BG=01
+                        .DW     %0000001010001010                               ; FG=00, BG=10
+                        .DW     %0000001111001111                               ; FG=00, BG=11
+                        .DW     %0101010000010000                               ; FG=01, BG=00
+                        .DW     %0101010101010101                               ; FG=01, BG=01
+                        .DW     %0101011010011010                               ; FG=01, BG=10
+                        .DW     %0101011111011111                               ; FG=01, BG=11
+                        .DW     %1010100000100000                               ; FG=10, BG=00
+                        .DW     %1010100101100101                               ; FG=10, BG=01
+                        .DW     %1010101010101010                               ; FG=10, BG=10
+                        .DW     %1010101111101111                               ; FG=10, BG=11                        
+                        .DW     %1111110000110000                               ; FG=11, BG=00
+                        .DW     %1111110101110101                               ; FG=11, BG=01
+                        .DW     %1111111010111010                               ; FG=11, BG=10
+                        .DW     %1111111111111111                               ; FG=11, BG=11       
+                        
 ; After the palette data is copied to video memory, it becomes the key buffer.
 _KEY_BUF:
 _PALETTE:               .DB     %00000000
-                        .DB     %01010010
                         .DB     %10100100
+                        .DB     %01010010
                         .DB     %11111111
 _PALETTE_END:
 
