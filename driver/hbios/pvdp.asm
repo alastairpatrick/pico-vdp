@@ -157,7 +157,7 @@ _INIT_LINES:
         LD      C, _BCMD_SET_DADDR_DST
         CALL    _BLIT_CMD_DE
 
-        LD      DE, _SCAN_LINES*2
+        LD      DE, _SCAN_LINES*16
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
@@ -1124,10 +1124,8 @@ _BLIT_COPY:
         PUSH    BC
         LD      D, B
         LD      E, C
-        SRL     D
-        RR      E
-        SRL     D
-        RR      E
+        SLA     E
+        RL      D
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
         POP     BC

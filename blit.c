@@ -128,54 +128,6 @@ static void STRIPED_SECTION WriteDisplayRAM(unsigned addr, uint32_t data) {
   g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
 }
 
-static void STRIPED_SECTION GetDimensions(int* width, int* height) {
-  int count = g_blit_regs[BLIT_REG_COUNT];
-  *width = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
-  if (*width == 0) {
-    *width = 0x100;
-  }
-  *height = g_blit_regs[BLIT_REG_COUNT] >> 8;
-  if (*height == 0) {
-    *height = 0x100;
-  }
-}
-
-static void STRIPED_SECTION DoStreamLocal() {
-  int addr = g_blit_regs[BLIT_REG_LADDR_DST];
-  int size = g_blit_regs[BLIT_REG_COUNT];
-
-  for (int i = 0; i < size; ++i) {
-    MCycle();
-    uint32_t data = PopFifoBlocking32();
-    WriteLocalRAM(addr, data);
-    ++addr;
-  }
-}
-
-static void STRIPED_SECTION DoClearDisplay(int data) {
-  data = (data << 8) | data;
-  data = (data << 16) | data;
-
-  int addr = g_blit_regs[BLIT_REG_DADDR_DST] >> 3;
-  int count = g_blit_regs[BLIT_REG_COUNT];
-
-  for (int i = 0; i < count; ++i) {
-    MCycle();    
-    WriteDisplayRAM(addr + i, data);
-  }
-}
-
-static void STRIPED_SECTION DoStreamDisplay() {
-  int addr = g_blit_regs[BLIT_REG_DADDR_DST] >> 3;
-  int count = g_blit_regs[BLIT_REG_COUNT];
-
-  for (int i = 0; i < count; ++i) {
-    MCycle();    
-    uint32_t data = PopFifoBlocking32();
-    WriteDisplayRAM(addr + i, data);
-  }
-}
-
 static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
   g_source_fifo_bits = 0;
 
@@ -184,6 +136,8 @@ static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
     g_source_fifo_addr = g_blit_regs[BLIT_REG_LADDR_SRC];
     break;
   case OPCODE_RECT:
+  case OPCODE_DSTREAM:
+  case OPCODE_LSTREAM:
     g_source_fifo_addr = 0;  // not used
     break;
   }
@@ -228,6 +182,17 @@ static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
     case OPCODE_RECT: {
       return 0;
     }
+    case OPCODE_DSTREAM:
+    case OPCODE_LSTREAM: {
+      if (g_source_fifo_bits == 0) {
+        g_source_fifo_buf = PopFifoBlocking32();
+        g_source_fifo_bits = 32;
+      }
+      int data = g_source_fifo_buf & 0xF;
+      g_source_fifo_buf >>= 4;
+      g_source_fifo_bits -= 4;
+      return data;
+    }
   }
 }
 
@@ -235,7 +200,10 @@ static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int laddr
   switch (opcode) {
   case OPCODE_BLIT:
   case OPCODE_RECT:
+  case OPCODE_DSTREAM:
     return ReadDisplayRAM(daddr);
+  case OPCODE_LSTREAM:
+    return ReadLocalRAM(laddr);
   }
 }
 
@@ -243,7 +211,11 @@ static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int ladd
   switch (opcode) {
   case OPCODE_BLIT:
   case OPCODE_RECT:
+  case OPCODE_DSTREAM:
     WriteDisplayRAM(daddr, data);
+    break;
+  case OPCODE_LSTREAM:
+    WriteLocalRAM(laddr, data);
     break;
   }
 }
@@ -252,17 +224,12 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int daddr_dest = g_blit_regs[BLIT_REG_DADDR_DST];
   int daddr_src = g_blit_regs[BLIT_REG_DADDR_SRC];
   int laddr_dest = g_blit_regs[BLIT_REG_LADDR_DST];
-  int laddr_src = g_blit_regs[BLIT_REG_LADDR_SRC];
-  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
-
-  int width, height;
-  GetDimensions(&width, &height);
 
   // Except for particular opcodes, these fields default to nop values.
   int unmasked = 1;
   int clip_left = 0;
-  int clip_right = 0xFF;
+  int clip_right = 0xFFFF;
   int cmap = 0x3210;
   if (opcode == OPCODE_BLIT) {
     unmasked = !(flags & BLIT_FLAG_MASKED);
@@ -275,7 +242,13 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     cmap = g_blit_regs[BLIT_REG_CMAP];
   }
 
-  int outer_width = (width + 15) / 8;
+  int width = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
+  int height = g_blit_regs[BLIT_REG_COUNT] >> 8;
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
+  if (opcode == OPCODE_DSTREAM || opcode == OPCODE_LSTREAM) {
+    width |= height << 8;
+    height = 1;
+  }
 
   InitSourceFifo(opcode);
 
@@ -285,12 +258,14 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     int daddr_dest_nibble = daddr_dest & 0x7;
     int daddr_source_nibble = daddr_src & 0x7;
 
+    int outer_width = (width + 7) / 8;
     int x = 0;
     uint64_t in_shift = 0;
     switch (opcode) {
     case OPCODE_BLIT:
     case OPCODE_RECT:
       x = -daddr_dest_nibble;
+      ++outer_width;
       break;
     }
 
@@ -323,7 +298,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       }
 
       WriteDestData(opcode, daddr_dest_word + ox, laddr_dest, new_out_data);
-      laddr_dest += 4;
+      ++laddr_dest;
     }
 
     daddr_dest += pitch;
@@ -350,14 +325,10 @@ void STRIPED_SECTION BlitMain() {
 
     switch (opcode) {
     case OPCODE_BLIT:
+    case OPCODE_DSTREAM:
+    case OPCODE_LSTREAM:
     case OPCODE_RECT:
       DoBlit(opcode);
-      break;
-    case OPCODE_DSTREAM:
-      DoStreamDisplay();
-      break;
-    case OPCODE_LSTREAM:
-      DoStreamLocal();
       break;
     case OPCODE_SET0:
     case OPCODE_SET1:
