@@ -34,11 +34,10 @@ _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
 _REG_START_LINE         .EQU    $24
 
-_BCMD_BLIT              .EQU    $88
-_BCMD_BSTREAM           .EQU    $38
-_BCMD_DDCOPY            .EQU    $32
-_BCMD_DSTREAM           .EQU    $30
-_BCMD_RECT              .EQU    $80
+_BCMD_BSTREAM           .EQU    $8F
+_BCMD_DSTREAM           .EQU    $8B
+_BCMD_IMAGE             .EQU    $81
+_BCMD_RECT              .EQU    $82
 _BCMD_SET_COUNT         .EQU    $03
 _BCMD_SET_CLIP          .EQU    $01
 _BCMD_SET_CMAP          .EQU    $08
@@ -515,7 +514,7 @@ _WRITE_CHAR:
         LD      C, _BCMD_SET_LADDR_SRC
         CALL    _BLIT_CMD_DE
 
-        LD      C, _BCMD_BLIT
+        LD      C, _BCMD_IMAGE
         CALL    _BLIT_CMD
 
         ; Advance character position

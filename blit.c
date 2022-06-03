@@ -35,6 +35,26 @@ enum {
   BLIT_REG_CMAP          = 8,  // 16-bit. Array of colors colors 0-3 are remapped to.
 };
 
+enum {
+  BLIT_OP_SRC             = 0x03,
+  BLIT_OP_SRC_DISPLAY     = 0x00,
+  BLIT_OP_SRC_BLITTER     = 0x01,
+  BLIT_OP_SRC_ZERO        = 0x02,
+  BLIT_OP_SRC_STREAM      = 0x03,
+
+  BLIT_OP_DEST            = 0x04,
+  BLIT_OP_DEST_DISPLAY    = 0x00,
+  BLIT_OP_DEST_BLITTER    = 0x04,
+
+  BLIT_OP_TOPY            = 0x08,
+  BLIT_OP_TOPY_PLAN       = 0x00,
+  BLIT_OP_TOPY_LIN        = 0x08,
+
+  BLIT_OP_FLAGS_EN        = 0x10,
+  BLIT_OP_CLIP_EN         = 0x20,
+  BLIT_OP_CMAP_EN         = 0x40,
+};
+
 typedef enum {
   OPCODE_SET0,
   OPCODE_SET1,
@@ -46,18 +66,18 @@ typedef enum {
   OPCODE_SET7,
   OPCODE_SET8,
 
-  OPCODE_DSTREAM    = 0x30,//
-  
-  OPCODE_BSTREAM    = 0x38,//
+  OPCODE_IMAGE_BASE  = 0x80,
+ 
+  OPCODE_DSTREAM    = OPCODE_IMAGE_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,   // 0x8B
+  OPCODE_BSTREAM    = OPCODE_IMAGE_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,   // 0x8F
+  OPCODE_RECT       = OPCODE_IMAGE_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN,  // 0x82
+  OPCODE_IMAGE      = OPCODE_IMAGE_BASE | BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN,  // 0x81
 
-  OPCODE_RECT       = 0x80,//
-  OPCODE_BLIT       = 0x88,//
-
-  OPCODE_SWAP0      = 0xF8,
-  OPCODE_SWAP1      = 0xF9,
-  OPCODE_SWAP2      = 0xFA,
-  OPCODE_SWAP3      = 0xFB,
-  OPCODE_NOP        = 0xFF,
+  OPCODE_SWAP0      = 0x48,
+  OPCODE_SWAP1      = 0x49,
+  OPCODE_SWAP2      = 0x4A,
+  OPCODE_SWAP3      = 0x4B,
+  OPCODE_NOP        = 0x4F,
 } Opcode;
 
 static DisplayBank* g_blit_display_bank;
@@ -132,7 +152,7 @@ static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
   g_source_fifo_bits = 0;
 
   switch (opcode) {
-  case OPCODE_BLIT:
+  case OPCODE_IMAGE:
     g_source_fifo_addr = g_blit_regs[BLIT_REG_BADDR_SRC];
     break;
   case OPCODE_RECT:
@@ -171,7 +191,7 @@ static uint32_t STRIPED_SECTION UnzipSourceFifo() {
 // Returns next 4 bits
 static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
   switch (opcode) {
-    case OPCODE_BLIT: {
+    case OPCODE_IMAGE: {
       if (g_source_fifo_bits == 0) {
         g_source_fifo_buf = ReadBlitterBank(g_source_fifo_addr++);
         g_source_fifo_bits = 32;
@@ -198,7 +218,7 @@ static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
 
 static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr) {
   switch (opcode) {
-  case OPCODE_BLIT:
+  case OPCODE_IMAGE:
   case OPCODE_RECT:
   case OPCODE_DSTREAM:
     return ReadDisplayBank(daddr);
@@ -209,7 +229,7 @@ static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr
 
 static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data) {
   switch (opcode) {
-  case OPCODE_BLIT:
+  case OPCODE_IMAGE:
   case OPCODE_RECT:
   case OPCODE_DSTREAM:
     WriteDisplayBank(daddr, data);
@@ -231,14 +251,14 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int clip_left = 0;
   int clip_right = 0xFFFF;
   int cmap = 0x3210;
-  if (opcode == OPCODE_BLIT) {
+  if (opcode == OPCODE_IMAGE) {
     unmasked = !(flags & BLIT_FLAG_MASKED);
     
     int clip = g_blit_regs[BLIT_REG_CLIP];
     clip_left = clip & 0xFF;
     clip_right = clip >> 8;
   }
-  if (opcode == OPCODE_BLIT || opcode == OPCODE_RECT) {
+  if (opcode == OPCODE_IMAGE || opcode == OPCODE_RECT) {
     cmap = g_blit_regs[BLIT_REG_CMAP];
   }
 
@@ -262,7 +282,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     int x = 0;
     uint64_t in_shift = 0;
     switch (opcode) {
-    case OPCODE_BLIT:
+    case OPCODE_IMAGE:
     case OPCODE_RECT:
       x = -daddr_dest_nibble;
       ++outer_width;
@@ -320,13 +340,13 @@ void STRIPED_SECTION BlitMain() {
   g_blit_display_bank = GetBlitBank();
 
   for (;;) {
-    int opcode = PopFifoBlocking8();
+    Opcode opcode = (Opcode) PopFifoBlocking8();
     MCycle();
 
     switch (opcode) {
-    case OPCODE_BLIT:
     case OPCODE_BSTREAM:
     case OPCODE_DSTREAM:
+    case OPCODE_IMAGE:
     case OPCODE_RECT:
       DoBlit(opcode);
       break;
