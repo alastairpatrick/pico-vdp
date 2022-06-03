@@ -255,15 +255,26 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int laddr_dest = g_blit_regs[BLIT_REG_LADDR_DST];
   int laddr_src = g_blit_regs[BLIT_REG_LADDR_SRC];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
-  int clip = g_blit_regs[BLIT_REG_CLIP];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
 
   int width, height;
   GetDimensions(&width, &height);
 
-  int clip_left = clip & 0xFF;
-  int clip_right = clip >> 8;
-  int unmasked = !(flags & BLIT_FLAG_MASKED);
+  // Except for particular opcodes, these fields default to nop values.
+  int unmasked = 1;
+  int clip_left = 0;
+  int clip_right = 0xFF;
+  int cmap = 0x3210;
+  if (opcode == OPCODE_BLIT) {
+    unmasked = !(flags & BLIT_FLAG_MASKED);
+    
+    int clip = g_blit_regs[BLIT_REG_CLIP];
+    clip_left = clip & 0xFF;
+    clip_right = clip >> 8;
+  }
+  if (opcode == OPCODE_BLIT || opcode == OPCODE_RECT) {
+    cmap = g_blit_regs[BLIT_REG_CMAP];
+  }
 
   int outer_width = (width + 15) / 8;
 
@@ -300,7 +311,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
           if (x >= clip_left && x <= clip_right) {
             if (src_color | unmasked) {
               if (src_color < 4) {
-                src_color = (g_blit_regs[BLIT_REG_CMAP] >> (src_color*4)) & 0xF;
+                src_color = (cmap >> (src_color*4)) & 0xF;
               }
               
               new_color = src_color;
