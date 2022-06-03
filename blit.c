@@ -105,22 +105,22 @@ static void STRIPED_SECTION MCycle() {
   } while (!IsBlitClockEnabled(dot_x));
 }
 
-static int STRIPED_SECTION PopFifoBlocking8() {
+static int STRIPED_SECTION PopCmdFifo8() {
   while (IsFifoEmpty()) {
     MCycle();
   }
   return PopFifo();
 }
 
-static int STRIPED_SECTION PopFifoBlocking16() {
-  int low = PopFifoBlocking8();
-  int high = PopFifoBlocking8();
+static int STRIPED_SECTION PopCmdFifo16() {
+  int low = PopCmdFifo8();
+  int high = PopCmdFifo8();
   return low | (high << 8);
 }
 
-static uint32_t STRIPED_SECTION PopFifoBlocking32() {
-  int low = PopFifoBlocking16();
-  int high = PopFifoBlocking16();
+static uint32_t STRIPED_SECTION PopCmdFifo32() {
+  int low = PopCmdFifo16();
+  int high = PopCmdFifo16();
   return low | (high << 16);
 }
 
@@ -165,6 +165,18 @@ static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
   }
 }
 
+static uint32_t STRIPED_SECTION PushSourceFifo(int buf) {
+  g_source_fifo_buf = buf;
+  g_source_fifo_bits = 32;
+}
+
+static uint32_t STRIPED_SECTION PopSourceFifo(int n) {
+    int data = g_source_fifo_buf & ((1 << n) - 1);
+    g_source_fifo_buf >>= n;
+    g_source_fifo_bits -= n;
+    return data;
+}
+
 static uint32_t STRIPED_SECTION UnzipSourceFifo(Opcode opcode) {
   int flags = g_blit_regs[BLIT_REG_FLAGS];
   int data;
@@ -175,20 +187,11 @@ static uint32_t STRIPED_SECTION UnzipSourceFifo(Opcode opcode) {
 
   switch (flags & BLIT_FLAG_UNZIP) {
   case BLIT_FLAG_UNZIP_OFF:
-    data = g_source_fifo_buf & 0xF;
-    g_source_fifo_buf >>= 4;
-    g_source_fifo_bits -= 4;
-    break;
+    return PopSourceFifo(4);
   case BLIT_FLAG_UNZIP_2X:
-    data = g_source_fifo_buf & 0x3;
-    g_source_fifo_buf >>= 2;
-    g_source_fifo_bits -= 2;
-    break;
+    return PopSourceFifo(2);
   case BLIT_FLAG_UNZIP_4X:
-    data = g_source_fifo_buf & 0x1;
-    g_source_fifo_buf >>= 1;
-    g_source_fifo_bits -= 1;
-    break;
+    return PopSourceFifo(1);
   }
 
   return data;
@@ -197,37 +200,26 @@ static uint32_t STRIPED_SECTION UnzipSourceFifo(Opcode opcode) {
 // Returns next 4 bits
 static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
   switch (opcode & BLIT_OP_SRC) {
-    case BLIT_OP_SRC_BLITTER: {
-      if (g_source_fifo_bits == 0) {
-        g_source_fifo_buf = ReadBlitterBank(g_source_fifo_addr++);
-        g_source_fifo_bits = 32;
-      }
+  case BLIT_OP_SRC_BLITTER:
+    if (g_source_fifo_bits == 0) {
+      PushSourceFifo(ReadBlitterBank(g_source_fifo_addr++));
+    }
+    return UnzipSourceFifo(opcode);
 
-      return UnzipSourceFifo(opcode);
+  case BLIT_OP_SRC_DISPLAY:
+    if (g_source_fifo_bits == 0) {
+      PushSourceFifo(ReadDisplayBank(g_source_fifo_addr++));
     }
-    case BLIT_OP_SRC_DISPLAY: {
-      if (g_source_fifo_bits == 0) {
-        g_source_fifo_buf = ReadDisplayBank(g_source_fifo_addr++);
-        g_source_fifo_bits = 32;
-      }
+    return PopSourceFifo(4);
 
-      int data = g_source_fifo_buf & 0xF;
-      g_source_fifo_buf >>= 4;
-      g_source_fifo_bits -= 4;
-      return data;
+  case BLIT_OP_SRC_ZERO:
+    return 0;
+
+  case BLIT_OP_SRC_STREAM:
+    if (g_source_fifo_bits == 0) {
+      PushSourceFifo(PopCmdFifo32());
     }
-    case BLIT_OP_SRC_ZERO:
-      return 0;
-    case BLIT_OP_SRC_STREAM: {
-      if (g_source_fifo_bits == 0) {
-        g_source_fifo_buf = PopFifoBlocking32();
-        g_source_fifo_bits = 32;
-      }
-      int data = g_source_fifo_buf & 0xF;
-      g_source_fifo_buf >>= 4;
-      g_source_fifo_bits -= 4;
-      return data;
-    }
+    return PopSourceFifo(4);
   }
 }
 
@@ -360,7 +352,7 @@ void STRIPED_SECTION BlitMain() {
   g_blit_display_bank = GetBlitBank();
 
   for (;;) {
-    Opcode opcode = (Opcode) PopFifoBlocking8();
+    Opcode opcode = (Opcode) PopCmdFifo8();
     MCycle();
 
     switch (opcode) {
@@ -373,13 +365,13 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SET6:
     case OPCODE_SET7:
     case OPCODE_SET8:
-      SetRegister(opcode, PopFifoBlocking16());
+      SetRegister(opcode, PopCmdFifo16());
       break;
     case OPCODE_SWAP0:
     case OPCODE_SWAP1:
     case OPCODE_SWAP2:
     case OPCODE_SWAP3:
-      DoSwap((SwapMode) (opcode & SWAP_MASK), PopFifoBlocking8());
+      DoSwap((SwapMode) (opcode & SWAP_MASK), PopCmdFifo8());
       break;
     default:
       assert(opcode & OPCODE_BLIT_BASE);
