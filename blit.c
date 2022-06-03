@@ -12,7 +12,7 @@
 #include "video_dma.h"
 
 #define NUM_BLIT_REGS 16
-#define LOCAL_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
+#define BLITTER_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
 #define MCYCLE_TIME 16
 
 enum {
@@ -26,12 +26,12 @@ enum {
 enum {
   BLIT_REG_DADDR_DST     = 0,  // 16-bit. Address of nibble in display bank.
   BLIT_REG_CLIP          = 1,  // 16-bit. Left side of unclipped area.
-  BLIT_REG_LADDR_SRC     = 2,  // 16-bit. Address of a 32-bit word in local bank.
+  BLIT_REG_BADDR_SRC     = 2,  // 16-bit. Address of a 32-bit word in blitter bank.
   BLIT_REG_COUNT         = 3,  // 16-bit. Iteration count or count pair.
   BLIT_REG_DPITCH        = 4,  // 9-bit. Offset added to display address.
   BLIT_REG_FLAGS         = 5,  // 16-bit. Miscellaneous flags.
   BLIT_REG_DADDR_SRC     = 6,  // 16-bit. Address of nibble in display bank.
-  BLIT_REG_LADDR_DST     = 7,  // 16-bit. Address of a 32-bit word in local bank.
+  BLIT_REG_BADDR_DST     = 7,  // 16-bit. Address of a 32-bit word in blitter bank.
   BLIT_REG_CMAP          = 8,  // 16-bit. Array of colors colors 0-3 are remapped to.
 };
 
@@ -48,7 +48,7 @@ typedef enum {
 
   OPCODE_DSTREAM    = 0x30,//
   
-  OPCODE_LSTREAM    = 0x38,//
+  OPCODE_BSTREAM    = 0x38,//
 
   OPCODE_RECT       = 0x80,//
   OPCODE_BLIT       = 0x88,//
@@ -60,11 +60,11 @@ typedef enum {
   OPCODE_NOP        = 0xFF,
 } Opcode;
 
-static DisplayBank* g_blit_bank;
+static DisplayBank* g_blit_display_bank;
 static uint16_t g_blit_regs[NUM_BLIT_REGS];
 static uint16_t g_last_mcycle;
 
-uint32_t g_local_bank[LOCAL_BANK_SIZE];
+uint32_t g_blit_bank[BLITTER_BANK_SIZE];
 
 static int g_source_fifo_addr;
 static int g_source_fifo_buf;
@@ -111,21 +111,21 @@ static void STRIPED_SECTION SetRegister(int idx, int data) {
   g_blit_regs[idx & (NUM_BLIT_REGS-1)] = data;
 }
 
-static uint32_t STRIPED_SECTION ReadLocalRAM(unsigned addr) {
-  return g_local_bank[addr & (LOCAL_BANK_SIZE-1)];
+static uint32_t STRIPED_SECTION ReadBlitterBank(unsigned addr) {
+  return g_blit_bank[addr & (BLITTER_BANK_SIZE-1)];
 }
 
 // Byte offset
-static void STRIPED_SECTION WriteLocalRAM(unsigned addr, uint32_t data) {
-  g_local_bank[addr & (LOCAL_BANK_SIZE-1)] = data;
+static void STRIPED_SECTION WriteBlitterBank(unsigned addr, uint32_t data) {
+  g_blit_bank[addr & (BLITTER_BANK_SIZE-1)] = data;
 }
 
-static uint32_t STRIPED_SECTION ReadDisplayRAM(unsigned addr) {
-  return g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)];
+static uint32_t STRIPED_SECTION ReadDisplayBank(unsigned addr) {
+  return g_blit_display_bank->words[addr & (DISPLAY_BANK_SIZE-1)];
 }
 
-static void STRIPED_SECTION WriteDisplayRAM(unsigned addr, uint32_t data) {
-  g_blit_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
+static void STRIPED_SECTION WriteDisplayBank(unsigned addr, uint32_t data) {
+  g_blit_display_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
 }
 
 static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
@@ -133,11 +133,11 @@ static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
 
   switch (opcode) {
   case OPCODE_BLIT:
-    g_source_fifo_addr = g_blit_regs[BLIT_REG_LADDR_SRC];
+    g_source_fifo_addr = g_blit_regs[BLIT_REG_BADDR_SRC];
     break;
   case OPCODE_RECT:
   case OPCODE_DSTREAM:
-  case OPCODE_LSTREAM:
+  case OPCODE_BSTREAM:
     g_source_fifo_addr = 0;  // not used
     break;
   }
@@ -173,7 +173,7 @@ static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
   switch (opcode) {
     case OPCODE_BLIT: {
       if (g_source_fifo_bits == 0) {
-        g_source_fifo_buf = ReadLocalRAM(g_source_fifo_addr++);
+        g_source_fifo_buf = ReadBlitterBank(g_source_fifo_addr++);
         g_source_fifo_bits = 32;
       }
 
@@ -183,7 +183,7 @@ static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
       return 0;
     }
     case OPCODE_DSTREAM:
-    case OPCODE_LSTREAM: {
+    case OPCODE_BSTREAM: {
       if (g_source_fifo_bits == 0) {
         g_source_fifo_buf = PopFifoBlocking32();
         g_source_fifo_bits = 32;
@@ -196,26 +196,26 @@ static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
   }
 }
 
-static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int laddr) {
+static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr) {
   switch (opcode) {
   case OPCODE_BLIT:
   case OPCODE_RECT:
   case OPCODE_DSTREAM:
-    return ReadDisplayRAM(daddr);
-  case OPCODE_LSTREAM:
-    return ReadLocalRAM(laddr);
+    return ReadDisplayBank(daddr);
+  case OPCODE_BSTREAM:
+    return ReadBlitterBank(baddr);
   }
 }
 
-static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int laddr, uint32_t data) {
+static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data) {
   switch (opcode) {
   case OPCODE_BLIT:
   case OPCODE_RECT:
   case OPCODE_DSTREAM:
-    WriteDisplayRAM(daddr, data);
+    WriteDisplayBank(daddr, data);
     break;
-  case OPCODE_LSTREAM:
-    WriteLocalRAM(laddr, data);
+  case OPCODE_BSTREAM:
+    WriteBlitterBank(baddr, data);
     break;
   }
 }
@@ -223,7 +223,7 @@ static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int ladd
 static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int daddr_dest = g_blit_regs[BLIT_REG_DADDR_DST];
   int daddr_src = g_blit_regs[BLIT_REG_DADDR_SRC];
-  int laddr_dest = g_blit_regs[BLIT_REG_LADDR_DST];
+  int baddr_dest = g_blit_regs[BLIT_REG_BADDR_DST];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
 
   // Except for particular opcodes, these fields default to nop values.
@@ -245,7 +245,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int width = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
   int height = g_blit_regs[BLIT_REG_COUNT] >> 8;
   int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
-  if (opcode == OPCODE_DSTREAM || opcode == OPCODE_LSTREAM) {
+  if (opcode == OPCODE_DSTREAM || opcode == OPCODE_BSTREAM) {
     width |= height << 8;
     height = 1;
   }
@@ -273,7 +273,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     for (int ox = 0; ox < outer_width; ++ox) {
       MCycle();
 
-      uint32_t old_out_data = ReadDestData(opcode, daddr_dest_word + ox, laddr_dest);
+      uint32_t old_out_data = ReadDestData(opcode, daddr_dest_word + ox, baddr_dest);
       uint32_t new_out_data = 0;
       for (int i = 0; i < 32; i += 4) {
         int old_color = (old_out_data >> i) & 0xF;
@@ -297,8 +297,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         ++x;
       }
 
-      WriteDestData(opcode, daddr_dest_word + ox, laddr_dest, new_out_data);
-      ++laddr_dest;
+      WriteDestData(opcode, daddr_dest_word + ox, baddr_dest, new_out_data);
+      ++baddr_dest;
     }
 
     daddr_dest += pitch;
@@ -313,11 +313,11 @@ static void STRIPED_SECTION DoSwap(SwapMode mode, int line_idx) {
     MCycle();
   }
 
-  g_blit_bank = GetBlitBank();
+  g_blit_display_bank = GetBlitBank();
 }
 
 void STRIPED_SECTION BlitMain() {
-  g_blit_bank = GetBlitBank();
+  g_blit_display_bank = GetBlitBank();
 
   for (;;) {
     int opcode = PopFifoBlocking8();
@@ -325,8 +325,8 @@ void STRIPED_SECTION BlitMain() {
 
     switch (opcode) {
     case OPCODE_BLIT:
+    case OPCODE_BSTREAM:
     case OPCODE_DSTREAM:
-    case OPCODE_LSTREAM:
     case OPCODE_RECT:
       DoBlit(opcode);
       break;
