@@ -47,8 +47,7 @@ typedef enum {
   OPCODE_SET8,
 
   OPCODE_DSTREAM    = 0x30,//
-  OPCODE_DCLEAR     = 0x34,
-
+  
   OPCODE_LSTREAM    = 0x38,//
 
   OPCODE_RECT       = 0x80,//
@@ -353,9 +352,6 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_BLIT:
     case OPCODE_RECT:
       DoBlit(opcode);
-      break;
-    case OPCODE_DCLEAR:
-      DoClearDisplay(PopFifoBlocking8());
       break;
     case OPCODE_DSTREAM:
       DoStreamDisplay();

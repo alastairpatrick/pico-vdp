@@ -36,7 +36,6 @@ _REG_START_LINE         .EQU    $24
 
 _BCMD_BLIT              .EQU    $88
 _BCMD_BSTREAM           .EQU    $38
-_BCMD_DCLEAR            .EQU    $34
 _BCMD_DDCOPY            .EQU    $32
 _BCMD_DSTREAM           .EQU    $30
 _BCMD_RECT              .EQU    $80
@@ -304,13 +303,16 @@ PVDP_RESET:
         LD      C, _BCMD_SET_DADDR_DST
         CALL    _BLIT_CMD_DE
 
-        LD      DE, $1800
+        LD      DE, $C000
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
-        LD      D, $00
-        LD      C, _BCMD_DCLEAR
-        CALL    _BLIT_CMD_D
+        LD      DE, $0000       ; clear color
+        LD      C, _BCMD_SET_CMAP
+        CALL    _BLIT_CMD_DE
+
+        LD      C, _BCMD_RECT
+        CALL    _BLIT_CMD
 
         ; Initial VDA state
         LD      D, $0F
