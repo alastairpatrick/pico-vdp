@@ -66,12 +66,13 @@ typedef enum {
   OPCODE_SET7,
   OPCODE_SET8,
 
-  OPCODE_IMAGE_BASE  = 0x80,
+  OPCODE_BLIT_BASE  = 0x80,
  
-  OPCODE_DSTREAM    = OPCODE_IMAGE_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,   // 0x8B
-  OPCODE_BSTREAM    = OPCODE_IMAGE_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,   // 0x8F
-  OPCODE_RECT       = OPCODE_IMAGE_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN,  // 0x82
-  OPCODE_IMAGE      = OPCODE_IMAGE_BASE | BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN,  // 0x81
+  OPCODE_DCLEAR     = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_CMAP_EN,  // 0xCA
+  OPCODE_DSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                          // 0x8B
+  OPCODE_BSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                          // 0x8F
+  OPCODE_RECT       = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_CMAP_EN,  // 0xC2
+  OPCODE_IMAGE      = OPCODE_BLIT_BASE | BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_CMAP_EN,  // 0xF1
 
   OPCODE_SWAP0      = 0x48,
   OPCODE_SWAP1      = 0x49,
@@ -151,21 +152,26 @@ static void STRIPED_SECTION WriteDisplayBank(unsigned addr, uint32_t data) {
 static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
   g_source_fifo_bits = 0;
 
-  switch (opcode) {
-  case OPCODE_IMAGE:
+  switch (opcode & BLIT_OP_SRC) {
+  case BLIT_OP_SRC_BLITTER:
     g_source_fifo_addr = g_blit_regs[BLIT_REG_BADDR_SRC];
     break;
-  case OPCODE_RECT:
-  case OPCODE_DSTREAM:
-  case OPCODE_BSTREAM:
+  case BLIT_OP_SRC_DISPLAY:
+    g_source_fifo_addr = g_blit_regs[BLIT_REG_DADDR_SRC];
+    break;
+  default:
     g_source_fifo_addr = 0;  // not used
     break;
   }
 }
 
-static uint32_t STRIPED_SECTION UnzipSourceFifo() {
+static uint32_t STRIPED_SECTION UnzipSourceFifo(Opcode opcode) {
   int flags = g_blit_regs[BLIT_REG_FLAGS];
   int data;
+
+  if (!(opcode & BLIT_OP_FLAGS_EN)) {
+    flags = BLIT_FLAG_UNZIP_OFF;
+  }
 
   switch (flags & BLIT_FLAG_UNZIP) {
   case BLIT_FLAG_UNZIP_OFF:
@@ -190,20 +196,29 @@ static uint32_t STRIPED_SECTION UnzipSourceFifo() {
 
 // Returns next 4 bits
 static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
-  switch (opcode) {
-    case OPCODE_IMAGE: {
+  switch (opcode & BLIT_OP_SRC) {
+    case BLIT_OP_SRC_BLITTER: {
       if (g_source_fifo_bits == 0) {
         g_source_fifo_buf = ReadBlitterBank(g_source_fifo_addr++);
         g_source_fifo_bits = 32;
       }
 
-      return UnzipSourceFifo();
+      return UnzipSourceFifo(opcode);
     }
-    case OPCODE_RECT: {
+    case BLIT_OP_SRC_DISPLAY: {
+      if (g_source_fifo_bits == 0) {
+        g_source_fifo_buf = ReadDisplayBank(g_source_fifo_addr++);
+        g_source_fifo_bits = 32;
+      }
+
+      int data = g_source_fifo_buf & 0xF;
+      g_source_fifo_buf >>= 4;
+      g_source_fifo_bits -= 4;
+      return data;
+    }
+    case BLIT_OP_SRC_ZERO:
       return 0;
-    }
-    case OPCODE_DSTREAM:
-    case OPCODE_BSTREAM: {
+    case BLIT_OP_SRC_STREAM: {
       if (g_source_fifo_bits == 0) {
         g_source_fifo_buf = PopFifoBlocking32();
         g_source_fifo_bits = 32;
@@ -217,26 +232,20 @@ static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
 }
 
 static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr) {
-  switch (opcode) {
-  case OPCODE_IMAGE:
-  case OPCODE_RECT:
-  case OPCODE_DSTREAM:
-    return ReadDisplayBank(daddr);
-  case OPCODE_BSTREAM:
+  switch (opcode & BLIT_OP_DEST) {
+  case BLIT_OP_DEST_BLITTER:
     return ReadBlitterBank(baddr);
+  case BLIT_OP_DEST_DISPLAY:
+    return ReadDisplayBank(daddr);
   }
 }
 
 static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data) {
-  switch (opcode) {
-  case OPCODE_IMAGE:
-  case OPCODE_RECT:
-  case OPCODE_DSTREAM:
-    WriteDisplayBank(daddr, data);
-    break;
-  case OPCODE_BSTREAM:
+  switch (opcode & BLIT_OP_DEST) {
+  case BLIT_OP_DEST_BLITTER:
     WriteBlitterBank(baddr, data);
-    break;
+  case BLIT_OP_DEST_DISPLAY:
+    WriteDisplayBank(daddr, data);
   }
 }
 
@@ -245,29 +254,43 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int daddr_src = g_blit_regs[BLIT_REG_DADDR_SRC];
   int baddr_dest = g_blit_regs[BLIT_REG_BADDR_DST];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
 
   // Except for particular opcodes, these fields default to nop values.
   int unmasked = 1;
+  if (opcode & BLIT_OP_FLAGS_EN) {
+    unmasked = !(flags & BLIT_FLAG_MASKED);
+  }
+
   int clip_left = 0;
   int clip_right = 0xFFFF;
-  int cmap = 0x3210;
-  if (opcode == OPCODE_IMAGE) {
-    unmasked = !(flags & BLIT_FLAG_MASKED);
-    
+  if (opcode & BLIT_OP_CLIP_EN) {
     int clip = g_blit_regs[BLIT_REG_CLIP];
     clip_left = clip & 0xFF;
     clip_right = clip >> 8;
   }
-  if (opcode == OPCODE_IMAGE || opcode == OPCODE_RECT) {
+
+  int cmap = 0x3210;
+  if (opcode & BLIT_OP_CMAP_EN) {
     cmap = g_blit_regs[BLIT_REG_CMAP];
   }
 
-  int width = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
-  int height = g_blit_regs[BLIT_REG_COUNT] >> 8;
-  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
-  if (opcode == OPCODE_DSTREAM || opcode == OPCODE_BSTREAM) {
-    width |= height << 8;
+  int width, height;
+  switch (opcode & BLIT_OP_TOPY) {
+  case BLIT_OP_TOPY_LIN:
+    width = g_blit_regs[BLIT_REG_COUNT];
     height = 1;
+    break;
+  case BLIT_OP_TOPY_PLAN:
+    width = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
+    if (width == 0) {
+      width = 0x100;
+    }
+    height = g_blit_regs[BLIT_REG_COUNT] >> 8;
+    if (height == 0) {
+      height = 0x100;
+    }
+    break;
   }
 
   InitSourceFifo(opcode);
@@ -281,12 +304,9 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     int outer_width = (width + 7) / 8;
     int x = 0;
     uint64_t in_shift = 0;
-    switch (opcode) {
-    case OPCODE_IMAGE:
-    case OPCODE_RECT:
+    if ((opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN) {
       x = -daddr_dest_nibble;
       ++outer_width;
-      break;
     }
 
     uint64_t in_data = 0;
@@ -344,12 +364,6 @@ void STRIPED_SECTION BlitMain() {
     MCycle();
 
     switch (opcode) {
-    case OPCODE_BSTREAM:
-    case OPCODE_DSTREAM:
-    case OPCODE_IMAGE:
-    case OPCODE_RECT:
-      DoBlit(opcode);
-      break;
     case OPCODE_SET0:
     case OPCODE_SET1:
     case OPCODE_SET2:
@@ -368,6 +382,8 @@ void STRIPED_SECTION BlitMain() {
       DoSwap((SwapMode) (opcode & SWAP_MASK), PopFifoBlocking8());
       break;
     default:
+      assert(opcode & OPCODE_BLIT_BASE);
+      DoBlit(opcode);
       break;
     }
   }

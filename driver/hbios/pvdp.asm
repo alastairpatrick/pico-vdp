@@ -35,9 +35,10 @@ _REG_SPRITE_Y           .EQU    $2C
 _REG_START_LINE         .EQU    $24
 
 _BCMD_BSTREAM           .EQU    $8F
+_BCMD_DCLEAR            .EQU    $CA
 _BCMD_DSTREAM           .EQU    $8B
-_BCMD_IMAGE             .EQU    $81
-_BCMD_RECT              .EQU    $82
+_BCMD_IMAGE             .EQU    $F1
+_BCMD_RECT              .EQU    $C2
 _BCMD_SET_COUNT         .EQU    $03
 _BCMD_SET_CLIP          .EQU    $01
 _BCMD_SET_CMAP          .EQU    $08
@@ -310,7 +311,7 @@ PVDP_RESET:
         LD      C, _BCMD_SET_CMAP
         CALL    _BLIT_CMD_DE
 
-        LD      C, _BCMD_RECT
+        LD      C, _BCMD_DCLEAR
         CALL    _BLIT_CMD
 
         ; Initial VDA state
