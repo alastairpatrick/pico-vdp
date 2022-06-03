@@ -41,9 +41,9 @@ _BCMD_IMAGE             .EQU    $F1
 _BCMD_RECT              .EQU    $C2
 _BCMD_SET_COUNT         .EQU    $03
 _BCMD_SET_CLIP          .EQU    $01
-_BCMD_SET_CMAP          .EQU    $08
-_BCMD_SET_DADDR_DST     .EQU    $00
-_BCMD_SET_DADDR_SRC     .EQU    $06
+_BCMD_SET_CMAP          .EQU    $06
+_BCMD_SET_DST_ADDR      .EQU    $00
+_BCMD_SET_SRC_ADDR      .EQU    $02
 _BCMD_SET_DPITCH        .EQU    $04
 _BCMD_SET_FLAGS         .EQU    $05
 _BCMD_SET_LADDR_DST     .EQU    $07
@@ -154,7 +154,7 @@ _INIT_LINES:
 
         ; Initialize lines.
         LD      DE, $C000
-        LD      C, _BCMD_SET_DADDR_DST
+        LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_DE
 
         LD      DE, _SCAN_LINES*16
@@ -300,7 +300,7 @@ PVDP_RESET:
 
         ; Clear display area
         LD      DE, 0
-        LD      C, _BCMD_SET_DADDR_DST
+        LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_DE
 
         LD      DE, $C000
@@ -506,13 +506,13 @@ _WRITE_CHAR:
 
         LD      HL, (_POS)
         CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DADDR_DST
+        LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
         ; LADDR = char * 2
         SLA     E
         LD      D, 0
-        LD      C, _BCMD_SET_LADDR_SRC
+        LD      C, _BCMD_SET_SRC_ADDR
         CALL    _BLIT_CMD_DE
 
         LD      C, _BCMD_IMAGE
@@ -623,12 +623,12 @@ _COPY_1_CHAR:
 
         LD      HL, (_POS)
         CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DADDR_DST
+        LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
         EX      DE, HL
         CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DADDR_SRC
+        LD      C, _BCMD_SET_SRC_ADDR
         CALL    _BLIT_CMD_HL
 
         ; TODO: finish
@@ -711,7 +711,7 @@ _NO_SCROLL_BACKWARD_WRAP:
 
 _SCROLL_CLEAR:
         CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DADDR_DST
+        LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
         LD      DE, $08F0
@@ -1112,11 +1112,8 @@ _BLIT_COPY:
 
         PUSH    AF
 
-        ; Set DADDR & LADDR
         PUSH    BC
-        LD      C, _BCMD_SET_DADDR_DST
-        CALL    _BLIT_CMD_DE
-        LD      C, _BCMD_SET_LADDR_DST
+        LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_DE
         POP     BC
 

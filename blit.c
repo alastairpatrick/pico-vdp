@@ -11,7 +11,7 @@
 #include "sys80.h"
 #include "video_dma.h"
 
-#define NUM_BLIT_REGS 16
+#define NUM_BLIT_REGS 8
 #define BLITTER_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
 #define MCYCLE_TIME 16
 
@@ -24,15 +24,13 @@ enum {
 };
 
 enum {
-  BLIT_REG_DADDR_DST     = 0,  // 16-bit. Address of nibble in display bank.
-  BLIT_REG_CLIP          = 1,  // 16-bit. Left side of unclipped area.
-  BLIT_REG_BADDR_SRC     = 2,  // 16-bit. Address of a 32-bit word in blitter bank.
-  BLIT_REG_COUNT         = 3,  // 16-bit. Iteration count or count pair.
-  BLIT_REG_DPITCH        = 4,  // 9-bit. Offset added to display address.
-  BLIT_REG_FLAGS         = 5,  // 16-bit. Miscellaneous flags.
-  BLIT_REG_DADDR_SRC     = 6,  // 16-bit. Address of nibble in display bank.
-  BLIT_REG_BADDR_DST     = 7,  // 16-bit. Address of a 32-bit word in blitter bank.
-  BLIT_REG_CMAP          = 8,  // 16-bit. Array of colors colors 0-3 are remapped to.
+  BLIT_REG_DST_ADDR       = 0,  // Address of nibble in display bank.
+  BLIT_REG_CLIP           = 1,  // Left side of unclipped area.
+  BLIT_REG_SRC_ADDR       = 2,  // Address of a 32-bit word in blitter bank.
+  BLIT_REG_COUNT          = 3,  // Iteration count or count pair.
+  BLIT_REG_PITCH          = 4,  // Offset added to display address.
+  BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
+  BLIT_REG_CMAP           = 6,  // Array of colors colors 0-3 are remapped to.
 };
 
 enum {
@@ -64,7 +62,6 @@ typedef enum {
   OPCODE_SET5,
   OPCODE_SET6,
   OPCODE_SET7,
-  OPCODE_SET8,
 
   OPCODE_BLIT_BASE  = 0x80,
  
@@ -154,10 +151,8 @@ static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
 
   switch (opcode & BLIT_OP_SRC) {
   case BLIT_OP_SRC_BLITTER:
-    g_source_fifo_addr = g_blit_regs[BLIT_REG_BADDR_SRC];
-    break;
   case BLIT_OP_SRC_DISPLAY:
-    g_source_fifo_addr = g_blit_regs[BLIT_REG_DADDR_SRC];
+    g_source_fifo_addr = g_blit_regs[BLIT_REG_SRC_ADDR];
     break;
   default:
     g_source_fifo_addr = 0;  // not used
@@ -242,11 +237,11 @@ static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int badd
 }
 
 static void STRIPED_SECTION DoBlit(Opcode opcode) {
-  int daddr_dest = g_blit_regs[BLIT_REG_DADDR_DST];
-  int daddr_src = g_blit_regs[BLIT_REG_DADDR_SRC];
-  int baddr_dest = g_blit_regs[BLIT_REG_BADDR_DST];
+  int daddr_dest = g_blit_regs[BLIT_REG_DST_ADDR];
+  int daddr_src = g_blit_regs[BLIT_REG_SRC_ADDR];
+  int baddr_dest = g_blit_regs[BLIT_REG_DST_ADDR];
   int flags = g_blit_regs[BLIT_REG_FLAGS];
-  int pitch = (int16_t) g_blit_regs[BLIT_REG_DPITCH];
+  int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
 
   // Except for particular opcodes, these fields default to nop values.
   int unmasked = 1;
@@ -364,7 +359,6 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SET5:
     case OPCODE_SET6:
     case OPCODE_SET7:
-    case OPCODE_SET8:
       SetRegister(opcode, PopCmdFifo16());
       break;
     case OPCODE_SWAP0:
