@@ -16,11 +16,12 @@
 #define MCYCLE_TIME 16
 
 enum {
-  BLIT_FLAG_UNZIP        = 0x0300,
-  BLIT_FLAG_UNZIP_OFF    = 0x0000,
-  BLIT_FLAG_UNZIP_2X     = 0x0100,
-  BLIT_FLAG_UNZIP_4X     = 0x0200,
-  BLIT_FLAG_MASKED       = 0x0400,
+  BLIT_FLAG_UNPACK        = 0x0300,
+  BLIT_FLAG_UNPACK_OFF    = 0x0000,
+  BLIT_FLAG_UNPACK_8_16   = 0x0100,
+  BLIT_FLAG_UNPACK_8_32   = 0x0200,
+  BLIT_FLAG_UNPACK_16_32  = 0x0300,
+  BLIT_FLAG_MASKED        = 0x0400,
 };
 
 enum {
@@ -66,6 +67,7 @@ typedef enum {
   OPCODE_BLIT_BASE  = 0x80,
  
   OPCODE_DCLEAR     = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_CMAP_EN,  // 0xCA
+  OPCODE_DDCOPY     = OPCODE_BLIT_BASE | BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                    // 0xA0
   OPCODE_DSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                          // 0x8B
   OPCODE_BSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                          // 0x8F
   OPCODE_RECT       = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_CMAP_EN,  // 0xC2
@@ -78,19 +80,45 @@ typedef enum {
   OPCODE_NOP        = 0x4F,
 } Opcode;
 
+typedef struct {
+  uint64_t bits;
+  int size;
+} Fifo64;
+
 static DisplayBank* g_blit_display_bank;
 static uint16_t g_blit_regs[NUM_BLIT_REGS];
 static uint16_t g_last_mcycle;
 
-uint32_t g_blit_bank[BLITTER_BANK_SIZE];
+union {
+  uint8_t words8[BLITTER_BANK_SIZE*4];
+  uint16_t words16[BLITTER_BANK_SIZE*2];
+  uint32_t words32[BLITTER_BANK_SIZE];
+} g_blit_bank;
 
-static int g_source_fifo_addr;
-static int g_source_fifo_buf;
-static uint32_t g_source_fifo_bits;
+static STRIPED_SECTION int Max(int a, int b) {
+  return a > b ? a : b;
+}
+
+static STRIPED_SECTION int Min(int a, int b) {
+  return a < b ? a : b;
+}
+
+static STRIPED_SECTION void Fifo64Push(Fifo64* fifo, int bits, int n) {
+  fifo->bits |= ((uint64_t) bits) << ((uint64_t) fifo->size);
+  fifo->size += n;
+  assert(fifo->size <= 64);
+}
+
+static STRIPED_SECTION int Fifo64Pop(Fifo64* fifo, int n) {
+  int bits = fifo->bits & ((1 << n) - 1);
+  fifo->bits >>= n;
+  fifo->size -= n;
+  assert(fifo->size >= 0);
+  return bits;
+}
 
 static void STRIPED_SECTION MCycle() {
   int dot_x, mcycle;
-
   do {
     do {
       dot_x = GetDotX();
@@ -129,13 +157,26 @@ static void STRIPED_SECTION SetRegister(int idx, int data) {
   g_blit_regs[idx & (NUM_BLIT_REGS-1)] = data;
 }
 
+// 32-bit word offset as addr.
 static uint32_t STRIPED_SECTION ReadBlitterBank(unsigned addr) {
-  return g_blit_bank[addr & (BLITTER_BANK_SIZE-1)];
+  return g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)];
 }
 
-// Byte offset
 static void STRIPED_SECTION WriteBlitterBank(unsigned addr, uint32_t data) {
-  g_blit_bank[addr & (BLITTER_BANK_SIZE-1)] = data;
+  g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)] = data;
+}
+
+// Zipped variants all use byte offsets as addr.
+static int STRIPED_SECTION ReadZippedBlitterBank8(unsigned addr) {
+  return g_blit_bank.words8[addr & (BLITTER_BANK_SIZE*4-1)];
+}
+
+static int STRIPED_SECTION ReadZippedBlitterBank16(unsigned addr) {
+  return g_blit_bank.words16[(addr/2) & (BLITTER_BANK_SIZE*2-1)];
+}
+
+static uint32_t STRIPED_SECTION ReadZippedBlitterBank32(unsigned addr) {
+  return g_blit_bank.words32[(addr/4) & (BLITTER_BANK_SIZE-1)];
 }
 
 static uint32_t STRIPED_SECTION ReadDisplayBank(unsigned addr) {
@@ -146,75 +187,59 @@ static void STRIPED_SECTION WriteDisplayBank(unsigned addr, uint32_t data) {
   g_blit_display_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
 }
 
-static void STRIPED_SECTION InitSourceFifo(Opcode opcode) {
-  g_source_fifo_bits = 0;
-
-  switch (opcode & BLIT_OP_SRC) {
-  case BLIT_OP_SRC_BLITTER:
-  case BLIT_OP_SRC_DISPLAY:
-    g_source_fifo_addr = g_blit_regs[BLIT_REG_SRC_ADDR];
-    break;
-  default:
-    g_source_fifo_addr = 0;  // not used
-    break;
-  }
-}
-
-static uint32_t STRIPED_SECTION PushSourceFifo(int buf) {
-  g_source_fifo_buf = buf;
-  g_source_fifo_bits = 32;
-}
-
-static uint32_t STRIPED_SECTION PopSourceFifo(int n) {
-    int data = g_source_fifo_buf & ((1 << n) - 1);
-    g_source_fifo_buf >>= n;
-    g_source_fifo_bits -= n;
-    return data;
-}
-
-static uint32_t STRIPED_SECTION UnzipSourceFifo(Opcode opcode) {
+static uint32_t STRIPED_SECTION UnzipSourceData(Opcode opcode, int* baddr_byte) {
   int flags = g_blit_regs[BLIT_REG_FLAGS];
-  int data;
-
   if (!(opcode & BLIT_OP_FLAGS_EN)) {
-    flags = BLIT_FLAG_UNZIP_OFF;
+    flags = BLIT_FLAG_UNPACK_OFF;
   }
 
-  switch (flags & BLIT_FLAG_UNZIP) {
-  case BLIT_FLAG_UNZIP_OFF:
-    return PopSourceFifo(4);
-  case BLIT_FLAG_UNZIP_2X:
-    return PopSourceFifo(2);
-  case BLIT_FLAG_UNZIP_4X:
-    return PopSourceFifo(1);
+  int unzipped = 0;
+  switch (flags & BLIT_FLAG_UNPACK) {
+    case BLIT_FLAG_UNPACK_OFF: {
+      uint32_t zipped = ReadZippedBlitterBank32(*baddr_byte);
+      *baddr_byte += 4;
+      return zipped;
+    }
+    case BLIT_FLAG_UNPACK_16_32: {
+      int zipped = ReadZippedBlitterBank16(*baddr_byte);
+      int unzipped = 0;
+      for (int i = 0; i < 8; ++i) {
+        unzipped |= (((zipped) >> (i*2)) & 0x3) << (i*4);
+      }
+      *baddr_byte += 2;
+      return unzipped;
+    }
+    case BLIT_FLAG_UNPACK_8_32: {
+      int zipped = ReadZippedBlitterBank8(*baddr_byte);
+      int unzipped = 0;
+      for (int i = 0; i < 8; ++i) {
+        unzipped |= (((zipped) >> i) & 0x1) << (i*4);
+      }
+      *baddr_byte += 1;
+      return unzipped;
+    }
+    case BLIT_FLAG_UNPACK_8_16: {
+      int zipped = ReadZippedBlitterBank8(*baddr_byte);
+      int unzipped = 0;
+      for (int i = 0; i < 4; ++i) {
+        unzipped |= (((zipped) >> (i*2)) & 0x3) << (i*4);
+      }
+      *baddr_byte += 1;
+      return unzipped | (unzipped << 16);
+    }
   }
-
-  return data;
 }
 
-// Returns next 4 bits
-static int STRIPED_SECTION ReadSourceFifo(Opcode opcode) {
+static uint32_t STRIPED_SECTION ReadSourceData(Opcode opcode, int daddr, int* baddr_byte) {
   switch (opcode & BLIT_OP_SRC) {
   case BLIT_OP_SRC_BLITTER:
-    if (g_source_fifo_bits == 0) {
-      PushSourceFifo(ReadBlitterBank(g_source_fifo_addr++));
-    }
-    return UnzipSourceFifo(opcode);
-
+    return UnzipSourceData(opcode, baddr_byte);
   case BLIT_OP_SRC_DISPLAY:
-    if (g_source_fifo_bits == 0) {
-      PushSourceFifo(ReadDisplayBank(g_source_fifo_addr++));
-    }
-    return PopSourceFifo(4);
-
+    return ReadDisplayBank(daddr);
   case BLIT_OP_SRC_ZERO:
     return 0;
-
   case BLIT_OP_SRC_STREAM:
-    if (g_source_fifo_bits == 0) {
-      PushSourceFifo(PopCmdFifo32());
-    }
-    return PopSourceFifo(4);
+    return PopCmdFifo32();
   }
 }
 
@@ -237,9 +262,10 @@ static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int badd
 }
 
 static void STRIPED_SECTION DoBlit(Opcode opcode) {
-  int daddr_dest = g_blit_regs[BLIT_REG_DST_ADDR];
-  int daddr_src = g_blit_regs[BLIT_REG_SRC_ADDR];
-  int baddr_dest = g_blit_regs[BLIT_REG_DST_ADDR];
+  int dest_daddr = g_blit_regs[BLIT_REG_DST_ADDR];
+  int src_daddr = g_blit_regs[BLIT_REG_SRC_ADDR];
+  int dest_baddr = g_blit_regs[BLIT_REG_DST_ADDR];
+  int src_baddr_byte = g_blit_regs[BLIT_REG_SRC_ADDR] * 4;
   int flags = g_blit_regs[BLIT_REG_FLAGS];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
 
@@ -280,36 +306,54 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     break;
   }
 
-  InitSourceFifo(opcode);
+  bool src_planar = (opcode & BLIT_OP_SRC) == BLIT_OP_SRC_DISPLAY && (opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN;
+  bool dest_planar = (opcode & BLIT_OP_DEST) == BLIT_OP_DEST_DISPLAY && (opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN;
 
-  for (int y = 0; y < height; ++y) {
-    int daddr_dest_word = daddr_dest >> 3;
-    int daddr_source_word = daddr_src >> 3;
-    int daddr_dest_nibble = daddr_dest & 0x7;
-    int daddr_source_nibble = daddr_src & 0x7;
+  Fifo64 fifo = {0};
 
-    int outer_width = (width + 7) / 8;
-    int x = 0;
-    uint64_t in_shift = 0;
-    if ((opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN) {
-      x = -daddr_dest_nibble;
-      ++outer_width;
+  int src_line_daddr = src_daddr - pitch;
+  int src_daddr_word = 0;
+  int src_x = width;
+  int src_y = -1;
+  int dest_line_daddr = dest_daddr - pitch;
+  int dest_daddr_word = 0;
+  int dest_x = width;
+  int dest_y = -1;
+  for (;;) {
+    MCycle();
+
+    if (dest_x >= width) {
+      dest_line_daddr += pitch;
+      dest_daddr_word = dest_line_daddr >> 3;
+
+      ++dest_y;
+      if (dest_y == height) {
+        return;
+      }
+
+      if (dest_planar) {
+        dest_x = -(dest_line_daddr & 0x7);
+      } else {
+        dest_x = 0;
+      }
     }
 
-    uint64_t in_data = 0;
-    for (int ox = 0; ox < outer_width; ++ox) {
-      MCycle();
-
-      uint32_t old_out_data = ReadDestData(opcode, daddr_dest_word + ox, baddr_dest);
+    {
+      Fifo64 save_fifo = fifo;
+      uint32_t old_out_data = ReadDestData(opcode, dest_daddr_word, dest_baddr);
       uint32_t new_out_data = 0;
-      for (int i = 0; i < 32; i += 4) {
-        int old_color = (old_out_data >> i) & 0xF;
+      for (int i = 0; i < 8; ++i) {
+        int old_color = (old_out_data >> (i*4)) & 0xF;
         int new_color = old_color;
 
-        if (x >= 0 && x < width) {
-          int src_color = ReadSourceFifo(opcode);
+        if (dest_x+i >= 0 && dest_x+i < width) {
+          if (fifo.size < 4) {
+            fifo = save_fifo;
+            goto skip_write;
+          }
+          int src_color = Fifo64Pop(&fifo, 4);
           
-          if (x >= clip_left && x <= clip_right) {
+          if (dest_x+i >= clip_left && dest_x+i <= clip_right) {
             if (src_color | unmasked) {
               if (src_color < 4) {
                 src_color = (cmap >> (src_color*4)) & 0xF;
@@ -320,16 +364,45 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
           }
         }
 
-        new_out_data |= new_color << i;
-        ++x;
+        new_out_data |= new_color << (i*4);
       }
 
-      WriteDestData(opcode, daddr_dest_word + ox, baddr_dest, new_out_data);
-      ++baddr_dest;
+      WriteDestData(opcode, dest_daddr_word, dest_baddr, new_out_data);
+
+      dest_x += 8;
+      ++dest_daddr_word;
+      ++dest_baddr;
     }
 
-    daddr_dest += pitch;
-    daddr_src += pitch;
+skip_write:
+    
+    if (src_x >= width) {
+      src_line_daddr += pitch;
+      src_daddr_word = src_line_daddr >> 3;
+
+      ++src_y;
+
+      if (src_planar) {
+        src_x = -(src_line_daddr & 0x7);
+      } else {
+        src_x = 0;
+      }
+    }
+
+    if (src_y < height && fifo.size <= 32) {
+      uint32_t in_data = ReadSourceData(opcode, src_daddr_word, &src_baddr_byte);
+      int begin = Max(0, -src_x*4);
+      int end = Min(32, (width-src_x)*4);
+      int num = end - begin;
+      Fifo64Push(&fifo, (in_data >> begin) & ((1 << num) - 1), end - begin);
+      /*for (int i = 0; i < 8; ++i) {
+        if (src_x+i >= 0 && src_x+i < width) {
+          Fifo64Push(&fifo, (in_data >> (i*4)) & 0xF, 4);
+        }
+      }*/
+      src_x += 8;
+      ++src_daddr_word;
+    }
   }
 }
 

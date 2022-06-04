@@ -36,6 +36,7 @@ _REG_START_LINE         .EQU    $24
 
 _BCMD_BSTREAM           .EQU    $8F
 _BCMD_DCLEAR            .EQU    $CA
+_BCMD_DDCOPY            .EQU    $A0
 _BCMD_DSTREAM           .EQU    $8B
 _BCMD_IMAGE             .EQU    $F1
 _BCMD_RECT              .EQU    $C2
@@ -266,7 +267,7 @@ _INIT_BLIT_REGS:
         LD      C, _BCMD_SET_CLIP
         CALL    _BLIT_CMD_DE
 
-        ; UNZIP2X
+        ; UNPACK_8_16
         LD      DE, $0100
         LD      C, _BCMD_SET_FLAGS
         CALL    _BLIT_CMD_DE
@@ -518,17 +519,7 @@ _WRITE_CHAR:
         LD      C, _BCMD_IMAGE
         CALL    _BLIT_CMD
 
-        ; Advance character position
-        LD      A, (_POS)
-        INC     A
-        CP      _WIDTH
-        JR      NZ, _WC_SKIP_NEWLINE
-        LD      A, (_POS+1)
-        INC     A
-        LD      (_POS+1), A
-        XOR     A
-_WC_SKIP_NEWLINE:
-        LD      (_POS), A
+        CALL    _ADVANCE_POS
 
         POP     HL
         POP     DE
@@ -558,6 +549,20 @@ _NO_CALC_DADDR_WRAP:
         SLA     H
         SLA     H
         SLA     H
+        RET
+
+_ADVANCE_POS
+        ; Advance character position
+        LD      A, (_POS)
+        INC     A
+        CP      _WIDTH
+        JR      NZ, _WC_SKIP_NEWLINE
+        LD      A, (_POS+1)
+        INC     A
+        LD      (_POS+1), A
+        XOR     A
+_WC_SKIP_NEWLINE:
+        LD      (_POS), A
         RET
 
 
@@ -600,6 +605,7 @@ PVDP_COPY:
         LD      B, L
 _COPY_LOOP
         CALL    _COPY_1_CHAR
+        CALL    _ADVANCE_POS
 
         ; Advance source position
         INC     E
@@ -611,6 +617,8 @@ _COPY_LOOP
 
 _COPY_NO_WRAP:
         DJNZ    _COPY_LOOP
+
+        CALL    _UPDATE_SPRITE
 
         POP     DE
         POP     BC
@@ -631,7 +639,8 @@ _COPY_1_CHAR:
         LD      C, _BCMD_SET_SRC_ADDR
         CALL    _BLIT_CMD_HL
 
-        ; TODO: finish
+        LD      C, _BCMD_DDCOPY
+        CALL    _BLIT_CMD
 
         POP     HL
         POP     DE

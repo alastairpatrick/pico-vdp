@@ -38,9 +38,8 @@ _MAIN_SCROLL_BACK:
         JR      _LOOP1
 
 _MAIN_SCROLL_COPY:
-        LD      D, 12
-        LD      E, 0
-        LD      L, 255
+        LD      DE, 0
+        LD      L, 100
         CALL    PVDP_COPY
         JR      _LOOP1
         
