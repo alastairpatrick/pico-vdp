@@ -103,6 +103,49 @@ _READY_LOOP:
         CP      $AA
         JR      NZ, _READY_LOOP
 
+        CALL    PVDP_RESET
+
+        ; Add to VDA dispatch table
+        LD      BC, PVDP_FNTBL
+        LD      DE, PVDP_IDAT
+        CALL    VDA_ADDENT
+
+        ; Initialize terminal emulation
+        LD      C, A
+        LD      DE, PVDP_FNTBL
+        LD      HL, PVDP_IDAT
+        CALL    TERM_ATTACH
+        
+        POP     HL
+        POP     DE
+        POP     BC
+        XOR     A
+        RET
+
+; Exit:
+;  A: 0
+;  C: Video Mode (0)
+;  D: Row Count
+;  E: Column Count
+;  HL: 0
+
+PVDP_QUERY:
+        LD      C, 0
+        LD      D, _HEIGHT
+        LD      E, _WIDTH
+        LD      HL, 0
+        XOR     A
+        RET
+
+
+; Exit:
+;  A: 0
+
+PVDP_RESET:
+        PUSH    BC
+        PUSH    DE
+        PUSH    HL
+
         CALL    _INIT_LINES
         CAll    _COPY_FONT
         
@@ -128,20 +171,36 @@ _READY_LOOP:
         LD      D, $FF
         LD      C, _REG_SPRITE_RGB
         CALL    _SET_REG_D
-
-        ; Add to VDA dispatch table
-        LD      BC, PVDP_FNTBL
-        LD      DE, PVDP_IDAT
-        CALL    VDA_ADDENT
-
-        ; Initialize terminal emulation
-        LD      C, A
-        LD      DE, PVDP_FNTBL
-        LD      HL, PVDP_IDAT
-        CALL    TERM_ATTACH
-
-        CALL    PVDP_RESET
         
+        ; Clear display area
+        LD      DE, 0
+        LD      C, _BCMD_SET_DST_ADDR
+        CALL    _BLIT_CMD_DE
+
+        LD      DE, $C000
+        LD      C, _BCMD_SET_COUNT
+        CALL    _BLIT_CMD_DE
+
+        LD      DE, $0000       ; clear color
+        LD      C, _BCMD_SET_CMAP
+        CALL    _BLIT_CMD_DE
+
+        LD      C, _BCMD_DCLEAR
+        CALL    _BLIT_CMD
+
+        ; Initial VDA state
+        LD      D, $0F
+        CALL    PVDP_SET_CURSOR_STYLE
+
+        LD      E, $0F
+        CALL    PVDP_SET_CHAR_COLOR
+
+        LD      DE, $0000
+        CALL    PVDP_SET_CURSOR_POS
+        
+        CALL    PVDP_KEYBOARD_FLUSH
+        CALL    _INIT_BLIT_REGS
+
         POP     HL
         POP     DE
         POP     BC
@@ -274,66 +333,6 @@ _INIT_BLIT_REGS:
 
         POP     DE
         RET
-
-; Exit:
-;  A: 0
-;  C: Video Mode (0)
-;  D: Row Count
-;  E: Column Count
-;  HL: 0
-
-PVDP_QUERY:
-        LD      C, 0
-        LD      D, _HEIGHT
-        LD      E, _WIDTH
-        LD      HL, 0
-        XOR     A
-        RET
-
-
-; Exit:
-;  A: 0
-
-PVDP_RESET:
-        PUSH    BC
-        PUSH    DE
-        PUSH    HL
-
-        ; Clear display area
-        LD      DE, 0
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_DE
-
-        LD      DE, $C000
-        LD      C, _BCMD_SET_COUNT
-        CALL    _BLIT_CMD_DE
-
-        LD      DE, $0000       ; clear color
-        LD      C, _BCMD_SET_CMAP
-        CALL    _BLIT_CMD_DE
-
-        LD      C, _BCMD_DCLEAR
-        CALL    _BLIT_CMD
-
-        ; Initial VDA state
-        LD      D, $0F
-        CALL    PVDP_SET_CURSOR_STYLE
-
-        LD      E, $0F
-        CALL    PVDP_SET_CHAR_COLOR
-
-        LD      DE, $0000
-        CALL    PVDP_SET_CURSOR_POS
-        
-        CALL    PVDP_KEYBOARD_FLUSH
-        CALL    _INIT_BLIT_REGS
-
-        POP     HL
-        POP     DE
-        POP     BC
-        XOR     A
-        RET
-
 
 ; Exit
 ;  A: 0
