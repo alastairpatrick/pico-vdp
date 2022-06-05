@@ -15,6 +15,7 @@ add_executable(pico-vdp
   hid.c
   keymap.c
   main.c
+  perf.c
   scan_out.c
   sys80.c
   video_dma.c

@@ -5,6 +5,7 @@
 
 #include "blit.h"
 
+#include "perf.h"
 #include "pins.h"
 #include "scan_out.h"
 #include "section.h"
@@ -263,6 +264,7 @@ static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int badd
   }
 }
 
+static PerfCounter g_blit_perf;
 static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int dest_daddr = g_blit_regs[BLIT_REG_DST_ADDR];
   int src_daddr = g_blit_regs[BLIT_REG_SRC_ADDR];
@@ -308,6 +310,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     break;
   }
 
+  bool enable_profiling = (opcode & BLIT_OP_SRC) != BLIT_OP_SRC_STREAM;
   bool src_planar = (opcode & BLIT_OP_SRC) == BLIT_OP_SRC_DISPLAY && (opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN;
   bool dest_planar = (opcode & BLIT_OP_DEST) == BLIT_OP_DEST_DISPLAY && (opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN;
 
@@ -324,6 +327,10 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   for (;;) {
     MCycle();
 
+    if (enable_profiling) {
+      BeginPerf(&g_blit_perf);
+    }
+    
     if (dest_x >= width) {
       dest_line_daddr += pitch;
       dest_daddr_word = dest_line_daddr >> 3;
@@ -405,6 +412,8 @@ skip_write:
       src_x += 8;
       ++src_daddr_word;
     }
+
+    EndPerf(&g_blit_perf);
   }
 }
 

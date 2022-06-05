@@ -8,6 +8,7 @@
 
 #include "hid.h"
 #include "blit.h"
+#include "perf.h"
 #include "pins.h"
 #include "scan_out.h"
 #include "section.h"
@@ -16,6 +17,7 @@
 
 
 void ScanMain() {
+  InitPerf();
   tusb_init();
 
   InitVideoInterrupts();
@@ -29,6 +31,7 @@ void ScanMain() {
 
 int main() {
   stdio_init_all();
+  InitPerf();
 
   gpio_init(LED_PIN);
   gpio_set_dir(LED_PIN, GPIO_OUT);
