@@ -10,10 +10,11 @@
 ; Word address          Description
 ; $0000-$01FF           256 character bitmaps
 
+; Configuration
 TERMENABLE      	.SET	TRUE
-#DEFINE USEFONT8X8
+_WIDTH                  .EQU    64              ; 64 or 80
 
-_WIDTH                  .EQU    80
+; Not configuration
 _HEIGHT                 .EQU    24
 _SCAN_WORDS             .EQU    32
 _SCAN_LINES             .EQU    _HEIGHT*8
@@ -110,12 +111,14 @@ _READY_LOOP:
         LD      DE, PVDP_IDAT
         CALL    VDA_ADDENT
 
+#if TERMENABLE
         ; Initialize terminal emulation
         LD      C, A
         LD      DE, PVDP_FNTBL
         LD      HL, PVDP_IDAT
         CALL    TERM_ATTACH
-        
+#endif
+
         POP     HL
         POP     DE
         POP     BC
@@ -321,8 +324,13 @@ _INIT_BLIT_REGS:
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
-        ; CLIP = $0300
+#if _WIDTH == 80
+        ; CLIP = $0200
         LD      DE, $0200
+#else
+        ; CLIP = $0300
+        LD      DE, $0300
+#endif
         LD      C, _BCMD_SET_CLIP
         CALL    _BLIT_CMD_DE
 
@@ -418,12 +426,20 @@ _UPDATE_SPRITE:
         LD      C, _REG_SPRITE_Y
         CALL    _SET_REG_D
 
+#if _WIDTH == 80
         ; SPRITE_X = col*3+8
         LD      A, E
         ADD     A, E
         ADD     A, E
         ADD     A, 8
         LD      D, A
+#else
+        ; SPRITE_X = col*4
+        SLA     E
+        SLA     E
+        LD      D, E
+#endif
+
         LD      C, _REG_SPRITE_X
         CALL    _SET_REG_D
 
@@ -532,7 +548,6 @@ _WRITE_CHAR:
 ;  HL: DADDR nibble address in display RAM, accounting for scroll
 
 _CALC_DADDR:
-        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * _CHAR_WIDTH/2 + 8
         LD      A, (_SCROLL)
         ADD     A, H
         CP      _HEIGHT
@@ -540,14 +555,23 @@ _CALC_DADDR:
         ADD     A, -_HEIGHT
 _NO_CALC_DADDR_WRAP:
         LD      H, A
+        SLA     H
+        SLA     H
+        SLA     H
+
+#if _WIDTH == 80
+        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 6/2 + 8
         LD      A, L
         ADD     A, L
         ADD     A, L
         ADD     A, 8
         LD      L, A
-        SLA     H
-        SLA     H
-        SLA     H
+#else
+        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 8/2
+        SLA     L
+        SLA     L
+#endif
+
         RET
 
 _ADVANCE_POS
@@ -722,7 +746,11 @@ _SCROLL_CLEAR:
         LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
+#if _WIDTH == 80
         LD      DE, $08F0
+#else
+        LD      DE, $0800
+#endif
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
