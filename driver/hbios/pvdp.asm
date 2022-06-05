@@ -474,12 +474,10 @@ _UPDATE_SPRITE:
 ; Entry:
 ;  E: Character Attribute
 ; Exit
-;  A: 0
+;  A: 1
 
 PVDP_SET_CHAR_ATTR:
-        LD      A, E
-        LD      (_ATTRS), A
-        XOR     A
+        LD      A, 1
         RET
 
 
@@ -494,7 +492,6 @@ PVDP_SET_CHAR_COLOR:
         PUSH    HL
 
         LD      A, E
-        LD      (_COLORS), A
 
 #if (_WIDTH == 80) | (_WIDTH == 64)
         ; Reduce to 2-bit foreground intensity in top 2 bits and 2-bit background intensity in bottom 2
@@ -1258,8 +1255,6 @@ _KEY_BUF_END:           .DB     0
 _MODIFIER_KEYS:         .DB     0
 _LAST_KEY_STATE:        .FILL   11, 0
 
-_ATTRS                  .DB     0
-_COLORS                 .DB     0
 _POS                    .DW     0
 _SCROLL                 .DB     0
 
