@@ -2,6 +2,7 @@
 
 /.vscode/.cortex*
 
-*.log
+*.exe
 *.hex
+*.log
 *.lst

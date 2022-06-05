@@ -67,10 +67,17 @@ TERM_ATTACH:
 TRUE        .EQU  1
 FALSE       .EQU  0
 TERMENABLE  .EQU  FALSE
-USELZSA2    .EQU  FALSE
+USELZSA2    .EQU  TRUE
 VDA_FNCNT   .EQU  15
 
 #INCLUDE "pvdp.asm"
+
+FONT6X8:
+#IF USELZSA2
+#INCLUDE "font6x8c.asm"
+#INCLUDE "unlzsa2s.asm"
+#ELSE
 #INCLUDE "font6x8u.asm"
+#ENDIF
 
 .END
