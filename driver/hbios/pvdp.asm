@@ -12,7 +12,7 @@
 
 ; Configuration
 TERMENABLE      	.SET	TRUE
-_WIDTH                  .EQU    64              ; 64 or 80
+_WIDTH                  .EQU    80              ; 42, 64 or 80
 
 ; Not configuration
 _HEIGHT                 .EQU    24
@@ -246,8 +246,13 @@ _LINE_LOOP:
         
         CALL    _BLIT_SYNC
 
+#if (_WIDTH == 80) | (_WIDTH == 64)
         ; HIRES4 mode
         LD      A, $72
+#else
+        ; LORES16 mode
+        LD      A, $76
+#endif
         OUT     (_PORT_BLIT), A
         LD      A, $0F
         OUT     (_PORT_BLIT), A
@@ -318,24 +323,39 @@ _INIT_BLIT_REGS:
         LD      C, _BCMD_SET_DPITCH
         CALL    _BLIT_CMD_DE
 
+#if (_WIDTH == 80) | (_WIDTH == 64)
         ; Width is in nibbles so 8 pixels @ 2bpp = 4 nibbles
         ; COUNTS = $0804
         LD      DE, $0804
+#else
+        LD      DE, $0808
+#endif
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
-#if _WIDTH == 80
+#if (_WIDTH == 80)
         ; CLIP = $0200
         LD      DE, $0200
-#else
+#endif
+#if (_WIDTH == 64)
         ; CLIP = $0300
         LD      DE, $0300
 #endif
+#if (_WIDTH == 42)
+        ; CLIP = $0700
+        LD      DE, $0700
+#endif
+        ; 
         LD      C, _BCMD_SET_CLIP
         CALL    _BLIT_CMD_DE
 
+#if (_WIDTH == 80) | (_WIDTH == 64)
         ; UNPACK_8_16
         LD      DE, $0100
+#else
+        ; UNPACK_8_32
+        LD      DE, $0200
+#endif
         LD      C, _BCMD_SET_FLAGS
         CALL    _BLIT_CMD_DE
 
@@ -426,12 +446,16 @@ _UPDATE_SPRITE:
         LD      C, _REG_SPRITE_Y
         CALL    _SET_REG_D
 
-#if _WIDTH == 80
-        ; SPRITE_X = col*3+8
+#if (_WIDTH == 80) | (_WIDTH == 42)
+        ; SPRITE_X = col*3+8 or SPRITE_X = col*6
         LD      A, E
         ADD     A, E
         ADD     A, E
+#if (_WIDTH == 42)
+        SLA     A
+#else
         ADD     A, 8
+#endif
         LD      D, A
 #else
         ; SPRITE_X = col*4
@@ -472,6 +496,7 @@ PVDP_SET_CHAR_COLOR:
         LD      A, E
         LD      (_COLORS), A
 
+#if (_WIDTH == 80) | (_WIDTH == 64)
         ; Reduce to 2-bit foreground intensity in top 2 bits and 2-bit background intensity in bottom 2
         LD      A, E
         AND     $0C
@@ -495,6 +520,18 @@ PVDP_SET_CHAR_COLOR:
 
         LD      C, _BCMD_SET_CMAP
         CALL    _BLIT_CMD_DE
+#else
+        ; Swap nibbles of E
+        RLC     E
+        RLC     E
+        RLC     E
+        RLC     E
+
+        ; Store in CMAP
+        LD      D, 0
+        LD      C, _BCMD_SET_CMAP
+        CALL    _BLIT_CMD_DE
+#endif
 
         POP     HL
         POP     DE
@@ -559,12 +596,16 @@ _NO_CALC_DADDR_WRAP:
         SLA     H
         SLA     H
 
-#if _WIDTH == 80
-        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 6/2 + 8
+#if (_WIDTH == 80) | (_WIDTH == 42)
+        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 6/2
         LD      A, L
         ADD     A, L
         ADD     A, L
+#if (_WIDTH == 42)
+        SLA     A
+#else
         ADD     A, 8
+#endif
         LD      L, A
 #else
         ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 8/2
@@ -746,10 +787,14 @@ _SCROLL_CLEAR:
         LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
-#if _WIDTH == 80
+#if (_WIDTH == 80)
         LD      DE, $08F0
-#else
+#endif
+#if (_WIDTH == 64)
         LD      DE, $0800
+#endif
+#if (_WIDTH == 42)
+        LD      DE, $08FC
 #endif
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
@@ -789,7 +834,6 @@ PVDP_KEYBOARD_STATUS:
 
         POP     DE
         JP      Z, CIO_IDLE
-        RET
 
 
 ; Exit:
@@ -1257,6 +1301,7 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
                         .DB     $7C, $79, $4A, $70, $69, $72, $7A, $6B          ; row 9
                         .DB     $73, $74, $6C, $75, $7D, $7B, $41, $71          ; row 10
 
+#if (_WIDTH == 80) | (_WIDTH == 64)
 ; FFFFFFBBBBFFBBBB
 _CMAPS                  .DW     %0000000000000000                               ; FG=00, BG=00
                         .DW     %0000000101000101                               ; FG=00, BG=01
@@ -1274,13 +1319,34 @@ _CMAPS                  .DW     %0000000000000000                               
                         .DW     %1111110101110101                               ; FG=11, BG=01
                         .DW     %1111111010111010                               ; FG=11, BG=10
                         .DW     %1111111111111111                               ; FG=11, BG=11       
-                        
+#endif
+
 ; After the palette data is copied to video memory, it becomes the key buffer.
 _KEY_BUF:
-_PALETTE:               .DB     %00000000
+_PALETTE:
+#if (_WIDTH == 80) | (_WIDTH == 64)
+                        .DB     %00000000
                         .DB     %10100100
                         .DB     %01010010
                         .DB     %11111111
+#else
+                        .DB     %00000000
+                        .DB     %00000100
+                        .DB     %00100000
+                        .DB     %00100100
+                        .DB     %10000000
+                        .DB     %10100000
+                        .DB     %10000100
+                        .DB     %11101101
+                        .DB     %01010010
+                        .DB     %01010110
+                        .DB     %01110010
+                        .DB     %00111111
+                        .DB     %11010010
+                        .DB     %11010111
+                        .DB     %11111010
+                        .DB     %11111111
+#endif
 _PALETTE_END:
 
 PVDP_IDAT:

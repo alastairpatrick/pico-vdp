@@ -103,7 +103,9 @@ static STRIPED_SECTION int Min(int a, int b) {
   return a < b ? a : b;
 }
 
-static STRIPED_SECTION void Fifo64Push(Fifo64* fifo, int bits, int n) {
+static STRIPED_SECTION void Fifo64Push(Fifo64* fifo, uint32_t bits, int n) {
+  bits <<= 32 - n;
+  bits >>= 32 - n;
   fifo->bits |= ((uint64_t) bits) << ((uint64_t) fifo->size);
   fifo->size += n;
   assert(fifo->size <= 64);
@@ -394,7 +396,7 @@ skip_write:
       int begin = Max(0, -src_x*4);
       int end = Min(32, (width-src_x)*4);
       int num = end - begin;
-      Fifo64Push(&fifo, (in_data >> begin) & ((1 << num) - 1), end - begin);
+      Fifo64Push(&fifo, in_data >> begin, end - begin);
       /*for (int i = 0; i < 8; ++i) {
         if (src_x+i >= 0 && src_x+i < width) {
           Fifo64Push(&fifo, (in_data >> (i*4)) & 0xF, 4);
