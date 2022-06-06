@@ -3,6 +3,8 @@
 
 #include "hardware/structs/systick.h"
 
+#include "section.h"
+
 typedef struct {
   bool enabled;
   int begin_time;
@@ -13,17 +15,17 @@ typedef struct {
 
 void InitPerf();
 
-static inline int GetPerfTime() {
+static inline int STRIPED_SECTION GetPerfTime() {
   return systick_hw->cvr;
 }
 
-static inline void BeginPerf(PerfCounter* counter) {
-  counter->begin_time = GetPerfTime();
+static inline void STRIPED_SECTION BeginPerf(PerfCounter* counter) {
+  counter->begin_time = systick_hw->cvr;
   counter->enabled = true;
 }
 
-static inline void EndPerf(PerfCounter* counter) {
-  int end_time = GetPerfTime();
+static inline void STRIPED_SECTION EndPerf(PerfCounter* counter) {
+  int end_time = systick_hw->cvr;
 
   if (!counter->enabled) {
     return;
@@ -34,5 +36,8 @@ static inline void EndPerf(PerfCounter* counter) {
   counter->average_time = counter->total_time / counter->samples;
   counter->enabled = false;
 }
+
+void EnableXIPCache();
+void DisableXIPCache();
 
 #endif  // PERF_H
