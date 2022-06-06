@@ -283,21 +283,14 @@ static ReadSourceDataFn STRIPED_SECTION PrepareReadSourceData(Opcode opcode) {
   }
 }
 
-static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr) {
+static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data, uint32_t mask) {
   switch (opcode & BLIT_OP_DEST) {
   case BLIT_OP_DEST_BLITTER:
-    return ReadBlitterBank(baddr);
+    WriteBlitterBank(baddr, (ReadBlitterBank(baddr) & ~mask) | data);
   case BLIT_OP_DEST_DISPLAY:
-    return ReadDisplayBank(daddr);
-  }
-}
-
-static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data) {
-  switch (opcode & BLIT_OP_DEST) {
-  case BLIT_OP_DEST_BLITTER:
-    WriteBlitterBank(baddr, data);
-  case BLIT_OP_DEST_DISPLAY:
-    WriteDisplayBank(daddr, data);
+    WriteDisplayBank(daddr, (ReadDisplayBank(daddr) & ~mask) | data);
+  //default:
+    //assert(false);
   }
 }
 
@@ -395,32 +388,34 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     }
 
     {
-      uint32_t out_data = ReadDestData(opcode, dest_daddr_word, dest_baddr);
-
       int begin, end;
       Overlap(&begin, &end, dest_x, width);
       int num = (end - begin) * 4;
       if (fifo.size >= num) {
-        int clip_low = (clip_left - dest_x) * 4;
-        int clip_high = (clip_right - dest_x) * 4;
+        int clip_low = clip_left - dest_x;
+        int clip_high = clip_right - dest_x;
         uint32_t in_data = Fifo64Pop(&fifo, end*4 - begin*4);
+        uint32_t out_data = 0;
 
         #pragma GCC unroll 2
-        for (int i = begin*4; i < end*4; i += 4) {
+        for (int i = begin; i < end; ++i) {
           int src_color = in_data & 0xF;
           in_data >>= 4;
+          out_data >>= 4;
 
           if ((src_color | unmasked) && (i >= clip_low) && (i <= clip_high)) {
             if (src_color < 4) {
               src_color = (cmap >> (src_color*4)) & 0xF;
             }
 
-            out_data &= ~(0xF << i);
-            out_data |= src_color << i;
+            out_data |= src_color << 28;
           }
         }
 
-        WriteDestData(opcode, dest_daddr_word, dest_baddr, out_data);
+        out_data >>= 32 - end*4;
+        uint32_t out_mask = ((1 << ((end-begin) * 4)) - 1) << (begin*4);
+        WriteDestData(opcode, dest_daddr_word, dest_baddr, out_data, out_mask);
+
         dest_x += 8;
         ++dest_daddr_word;
         ++dest_baddr;
