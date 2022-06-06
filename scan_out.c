@@ -221,7 +221,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutHiresText(uint8_t* dest, int width, in
   }
 }
 
-void ScanOutSprite(uint8_t* dest, int width, int y) {
+void SCAN_OUT_INNER_SECTION ScanOutSprite(uint8_t* dest, int width, int y) {
   int sprite_x = g_sys80_regs.sprite_x * 2;
   int sprite_rgb = g_sys80_regs.sprite_rgb;
 
