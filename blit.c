@@ -401,22 +401,23 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       Overlap(&begin, &end, dest_x, width);
       int num = (end - begin) * 4;
       if (fifo.size >= num) {
-        uint32_t in_data = Fifo64Pop(&fifo, (end - begin) * 4);
-        for (int i = begin; i < end; ++i) {
+        int clip_low = (clip_left - dest_x) * 4;
+        int clip_high = (clip_right - dest_x) * 4;
+        uint32_t in_data = Fifo64Pop(&fifo, end*4 - begin*4);
+
+        #pragma GCC unroll 2
+        for (int i = begin*4; i < end*4; i += 4) {
           int src_color = in_data & 0xF;
           in_data >>= 4;
 
-          if (dest_x+i >= clip_left && dest_x+i <= clip_right) {
-            if (src_color | unmasked) {
-              if (src_color < 4) {
-                src_color = (cmap >> (src_color*4)) & 0xF;
-              }
-              
-              out_data &= ~(0xF << (i*4));
-              out_data |= src_color << (i*4);
+          if ((src_color | unmasked) && (i >= clip_low) && (i <= clip_high)) {
+            if (src_color < 4) {
+              src_color = (cmap >> (src_color*4)) & 0xF;
             }
-          }
 
+            out_data &= ~(0xF << i);
+            out_data |= src_color << i;
+          }
         }
 
         WriteDestData(opcode, dest_daddr_word, dest_baddr, out_data);
@@ -439,7 +440,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       }
     }
 
-    if (src_y < height && fifo.size <= 32) {
+    if (fifo.size <= 32 && src_y < height) {
       uint32_t in_data = read_source_data(src_daddr_word, &src_baddr_byte);
       int begin, end;
       Overlap(&begin, &end, src_x, width);
