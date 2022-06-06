@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "hardware/interp.h"
 #include "pico/stdlib.h"
 
 #include "blit.h"
@@ -394,14 +395,15 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       if (fifo.size >= num) {
         int clip_low = clip_left - dest_x;
         int clip_high = clip_right - dest_x;
-        uint32_t in_data = Fifo64Pop(&fifo, end*4 - begin*4);
+
+        interp0->accum[0] = Fifo64Pop(&fifo, end*4 - begin*4);
         uint32_t out_data = 0;
 
-        #pragma GCC unroll 2
+        #pragma GCC unroll 3
         for (int i = begin; i < end; ++i) {
-          int src_color = in_data & 0xF;
-          in_data >>= 4;
           out_data >>= 4;
+
+          int src_color = interp0->pop[1];
 
           if ((src_color | unmasked) && (i >= clip_low) && (i <= clip_high)) {
             if (src_color < 4) {
@@ -460,8 +462,24 @@ static void STRIPED_SECTION DoSwap(SwapMode mode, int line_idx) {
   g_blit_display_bank = GetBlitBank();
 }
 
-void STRIPED_SECTION BlitMain() {
+void InitBlit() {
+  interp_config cfg;
+  
+  // Interpolator 0 lane 1 yields a sequence of masked 4-bit colors.
+  cfg = interp_default_config();
+  interp_config_set_shift(&cfg, 4);
+  interp_set_config(interp0, 0, &cfg);
+  
+  cfg = interp_default_config();
+  interp_config_set_mask(&cfg, 0, 3);
+  interp_config_set_cross_input(&cfg, true);
+  interp_set_config(interp0, 1, &cfg);
+
   g_blit_display_bank = GetBlitBank();
+}
+
+void STRIPED_SECTION BlitMain() {
+  InitBlit();
 
   for (;;) {
     Opcode opcode = (Opcode) PopCmdFifo8();
