@@ -43,7 +43,7 @@ _BCMD_IMAGE             .EQU    $F1
 _BCMD_RECT              .EQU    $C2
 _BCMD_SET_COUNT         .EQU    $03
 _BCMD_SET_CLIP          .EQU    $01
-_BCMD_SET_CMAP          .EQU    $06
+_BCMD_SET_COLORS        .EQU    $06
 _BCMD_SET_DST_ADDR      .EQU    $00
 _BCMD_SET_SRC_ADDR      .EQU    $02
 _BCMD_SET_DPITCH        .EQU    $04
@@ -185,7 +185,7 @@ PVDP_RESET:
         CALL    _BLIT_CMD_DE
 
         LD      DE, $0000       ; clear color
-        LD      C, _BCMD_SET_CMAP
+        LD      C, _BCMD_SET_COLORS
         CALL    _BLIT_CMD_DE
 
         LD      C, _BCMD_DCLEAR
@@ -489,48 +489,41 @@ PVDP_SET_CHAR_ATTR:
 PVDP_SET_CHAR_COLOR:
         PUSH    BC
         PUSH    DE
-        PUSH    HL
-
-        LD      A, E
 
 #if (_WIDTH == 80) | (_WIDTH == 64)
-        ; Reduce to 2-bit foreground intensity in top 2 bits and 2-bit background intensity in bottom 2
+        ; Reduce to 2-bit intensities in form FfFfBbBb
         LD      A, E
-        AND     $0C
-        SLA     A
+        AND     $C0             ; mask Bb
+        RLC     A
+        RLC     A               ; 000000Bb
+        LD      D, A
+        SLA     D
+        SLA     D               ; 0000Bb00
+        OR      D               ; 0000BbBb
         LD      D, A
         LD      A, E
-        AND     $C0
-        RLC     A
-        RLC     A
-        RLC     A
-        OR      D
-
-        ; Lookup the one of 16 CMAPs for this color combination.
-        LD      D, 0
+        AND     $0C             ; mask Ff
+        SLA     A
+        SLA     A               ; 00Ff0000
         LD      E, A
-        LD      HL, _CMAPS
-        ADD     HL, DE
-        LD      E, (HL)
-        INC     HL
-        LD      D, (HL)
-
-        LD      C, _BCMD_SET_CMAP
-        CALL    _BLIT_CMD_DE
+        SLA     E
+        SLA     E               ; Ff000000
+        OR      E               ; FfFf0000
+        OR      D               ; FfFfBbBb
+        LD      E, A
 #else
         ; Swap nibbles of E
         RLC     E
         RLC     E
         RLC     E
         RLC     E
-
-        ; Store in CMAP
-        LD      D, 0
-        LD      C, _BCMD_SET_CMAP
-        CALL    _BLIT_CMD_DE
 #endif
 
-        POP     HL
+        ; Store in COLORS
+        LD      D, 0
+        LD      C, _BCMD_SET_COLORS
+        CALL    _BLIT_CMD_DE
+
         POP     DE
         POP     BC
         
@@ -1295,26 +1288,6 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
                         .DB     $29, $6C, $70, $71, $6B, $75, $72, $74          ; row 8
                         .DB     $7C, $79, $4A, $70, $69, $72, $7A, $6B          ; row 9
                         .DB     $73, $74, $6C, $75, $7D, $7B, $41, $71          ; row 10
-
-#if (_WIDTH == 80) | (_WIDTH == 64)
-; FFFFFFBBBBFFBBBB
-_CMAPS                  .DW     %0000000000000000                               ; FG=00, BG=00
-                        .DW     %0000000101000101                               ; FG=00, BG=01
-                        .DW     %0000001010001010                               ; FG=00, BG=10
-                        .DW     %0000001111001111                               ; FG=00, BG=11
-                        .DW     %0101010000010000                               ; FG=01, BG=00
-                        .DW     %0101010101010101                               ; FG=01, BG=01
-                        .DW     %0101011010011010                               ; FG=01, BG=10
-                        .DW     %0101011111011111                               ; FG=01, BG=11
-                        .DW     %1010100000100000                               ; FG=10, BG=00
-                        .DW     %1010100101100101                               ; FG=10, BG=01
-                        .DW     %1010101010101010                               ; FG=10, BG=10
-                        .DW     %1010101111101111                               ; FG=10, BG=11                        
-                        .DW     %1111110000110000                               ; FG=11, BG=00
-                        .DW     %1111110101110101                               ; FG=11, BG=01
-                        .DW     %1111111010111010                               ; FG=11, BG=10
-                        .DW     %1111111111111111                               ; FG=11, BG=11       
-#endif
 
 ; After the palette data is copied to video memory, it becomes the key buffer.
 _KEY_BUF:

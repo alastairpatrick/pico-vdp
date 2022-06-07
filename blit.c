@@ -1,7 +1,6 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include "hardware/interp.h"
 #include "pico/stdlib.h"
 
 #include "blit.h"
@@ -33,7 +32,7 @@ enum {
   BLIT_REG_COUNT          = 3,  // Iteration count or count pair.
   BLIT_REG_PITCH          = 4,  // Offset added to display address.
   BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
-  BLIT_REG_CMAP           = 6,  // Array of colors colors 0-3 are remapped to.
+  BLIT_REG_COLORS         = 6,  // Array of colors.
 };
 
 enum {
@@ -53,7 +52,7 @@ enum {
 
   BLIT_OP_FLAGS_EN        = 0x10,
   BLIT_OP_CLIP_EN         = 0x20,
-  BLIT_OP_CMAP_EN         = 0x40,
+  BLIT_OP_COLOR_EN        = 0x40,
 };
 
 typedef enum {
@@ -68,12 +67,12 @@ typedef enum {
 
   OPCODE_BLIT_BASE  = 0x80,
  
-  OPCODE_DCLEAR     = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_CMAP_EN,  // 0xCA
-  OPCODE_DDCOPY     = OPCODE_BLIT_BASE | BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                    // 0xA0
-  OPCODE_DSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                          // 0x8B
-  OPCODE_BSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                          // 0x8F
-  OPCODE_RECT       = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_CMAP_EN,  // 0xC2
-  OPCODE_IMAGE      = OPCODE_BLIT_BASE | BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_CMAP_EN,  // 0xF1
+  OPCODE_DCLEAR     = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_COLOR_EN,  // 0xCA
+  OPCODE_DDCOPY     = OPCODE_BLIT_BASE | BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                     // 0xA0
+  OPCODE_DSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                           // 0x8B
+  OPCODE_BSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                           // 0x8F
+  OPCODE_RECT       = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_COLOR_EN,  // 0xC2
+  OPCODE_IMAGE      = OPCODE_BLIT_BASE | BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_COLOR_EN,  // 0xF1
 
   OPCODE_SWAP0      = 0x48,
   OPCODE_SWAP1      = 0x49,
@@ -97,8 +96,11 @@ union {
   uint32_t words32[BLITTER_BANK_SIZE];
 } g_blit_bank;
 
+uint16_t g_unpack12[0x100];
+uint16_t g_unpack24[0x100];
+
 #pragma GCC push_options
-#pragma GCC optimize("O3")
+#pragma GCC optimize("Og")
 
 static STRIPED_SECTION int Max(int a, int b) {
   return a > b ? a : b;
@@ -202,39 +204,31 @@ static void STRIPED_SECTION WriteDisplayBank(unsigned addr, uint32_t data) {
 typedef uint32_t (*ReadSourceDataFn)(int daddr, int* baddr_byte);
 
 uint32_t STRIPED_SECTION ReadBlitterSourceData(int daddr, int* baddr_byte) {
-  uint32_t zipped = ReadZippedBlitterBank32(*baddr_byte);
+  uint32_t data32 = ReadZippedBlitterBank32(*baddr_byte);
   *baddr_byte += 4;
-  return zipped;
+  return data32;
 }
 
 uint32_t STRIPED_SECTION UnpackBlitterSourceData_16_32(int daddr, int* baddr_byte) {
-  int zipped = ReadZippedBlitterBank16(*baddr_byte);
-  int unzipped = 0;
-  for (int i = 0; i < 8; ++i) {
-    unzipped |= (((zipped) >> (i*2)) & 0x3) << (i*4);
-  }
+  uint32_t data16 = ReadZippedBlitterBank16(*baddr_byte);
+  uint32_t data32 = g_unpack24[data16 & 0xFF] | (g_unpack24[data16 >> 8] << 16);
   *baddr_byte += 2;
-  return unzipped;
+  return data32;
 }
 
 uint32_t STRIPED_SECTION UnpackBlitterSourceData_8_32(int daddr, int* baddr_byte) {
-  int zipped = ReadZippedBlitterBank8(*baddr_byte);
-  int unzipped = 0;
-  for (int i = 0; i < 8; ++i) {
-    unzipped |= (((zipped) >> i) & 0x1) << (i*4);
-  }
+  int data8 = ReadZippedBlitterBank8(*baddr_byte);
+  uint32_t data16 = g_unpack12[data8];
+  uint32_t data32 = g_unpack24[data16 & 0xFF] | (g_unpack24[data16 >> 8] << 16);
   *baddr_byte += 1;
-  return unzipped;
+  return data32;
 }
 
 uint32_t STRIPED_SECTION UnpackBlitterSourceData_8_16(int daddr, int* baddr_byte) {
-  int zipped = ReadZippedBlitterBank8(*baddr_byte);
-  int unzipped = 0;
-  for (int i = 0; i < 4; ++i) {
-    unzipped |= (((zipped) >> (i*2)) & 0x3) << (i*4);
-  }
+  uint32_t data8 = ReadZippedBlitterBank8(*baddr_byte);
+  uint32_t data16 = g_unpack12[data8];
   *baddr_byte += 1;
-  return unzipped | (unzipped << 16);
+  return data16 | (data16 << 16);
 }
 
 static ReadSourceDataFn STRIPED_SECTION PrepareUnpackSourceData(Opcode opcode) {
@@ -310,6 +304,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int src_baddr_byte = g_blit_regs[BLIT_REG_SRC_ADDR] * 4;
   int flags = g_blit_regs[BLIT_REG_FLAGS];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
+  int colors = g_blit_regs[BLIT_REG_COLORS];
 
   // Except for particular opcodes, these fields default to nop values.
   int unmasked = 1;
@@ -325,10 +320,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     clip_right = clip >> 8;
   }
 
-  int cmap = 0x3210;
-  if (opcode & BLIT_OP_CMAP_EN) {
-    cmap = g_blit_regs[BLIT_REG_CMAP];
-  }
+  int bg_color = g_blit_regs[BLIT_REG_COLORS] & 0xF;
+  int fg_color = (g_blit_regs[BLIT_REG_COLORS] >> 4) & 0xF;
 
   int width, height;
   switch (opcode & BLIT_OP_TOPY) {
@@ -396,25 +389,27 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         int clip_low = clip_left - dest_x;
         int clip_high = clip_right - dest_x;
 
-        interp0->accum[0] = Fifo64Pop(&fifo, end*4 - begin*4);
+        uint32_t in_data = Fifo64Pop(&fifo, end*4 - begin*4);
         uint32_t out_data = 0;
 
-        #pragma GCC unroll 3
-        for (int i = begin; i < end; ++i) {
+        for (int i = 0; i < 8; ++i) {
           out_data >>= 4;
 
-          int src_color = interp0->pop[1];
+          if (i >= begin && i < end) {
 
-          if ((src_color | unmasked) && (i >= clip_low) && (i <= clip_high)) {
-            if (src_color < 4) {
-              src_color = (cmap >> (src_color*4)) & 0xF;
+            int src_color = in_data & 0xF;
+            in_data >>= 4;
+
+            if ((src_color | unmasked) && (i >= clip_low) && (i <= clip_high)) {
+              if (opcode & BLIT_OP_COLOR_EN) {
+                src_color = (fg_color & src_color) | (bg_color & ~src_color);
+              }
+
+              out_data |= src_color << 28;
             }
-
-            out_data |= src_color << 28;
           }
         }
 
-        out_data >>= 32 - end*4;
         uint32_t out_mask = ((1 << ((end-begin) * 4)) - 1) << (begin*4);
         WriteDestData(opcode, dest_daddr_word, dest_baddr, out_data, out_mask);
 
@@ -463,19 +458,18 @@ static void STRIPED_SECTION DoSwap(SwapMode mode, int line_idx) {
 }
 
 void InitBlit() {
-  interp_config cfg;
-  
-  // Interpolator 0 lane 1 yields a sequence of masked 4-bit colors.
-  cfg = interp_default_config();
-  interp_config_set_shift(&cfg, 4);
-  interp_set_config(interp0, 0, &cfg);
-  
-  cfg = interp_default_config();
-  interp_config_set_mask(&cfg, 0, 3);
-  interp_config_set_cross_input(&cfg, true);
-  interp_set_config(interp0, 1, &cfg);
-
   g_blit_display_bank = GetBlitBank();
+
+  for (int packed = 0; packed < 0x100; ++packed) {
+    for (int i = 0; i < 8; ++i) {
+      int bits = (packed >> i) & 0x1;
+      g_unpack12[packed] |= (bits << (i*2)) | (bits << (i*2+1));
+    }
+    for (int i = 0; i < 4; ++i) {
+      int bits = (packed >> (i*2)) & 0x3;
+      g_unpack24[packed] |= (bits << (i*4)) | (bits << (i*4+2));
+    }
+  }
 }
 
 void STRIPED_SECTION BlitMain() {
