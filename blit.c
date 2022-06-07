@@ -100,7 +100,7 @@ uint16_t g_unpack12[0x100];
 uint16_t g_unpack24[0x100];
 
 #pragma GCC push_options
-#pragma GCC optimize("Og")
+#pragma GCC optimize("O3")
 
 static STRIPED_SECTION int Max(int a, int b) {
   return a > b ? a : b;
@@ -281,9 +281,9 @@ static ReadSourceDataFn STRIPED_SECTION PrepareReadSourceData(Opcode opcode) {
 static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data, uint32_t mask) {
   switch (opcode & BLIT_OP_DEST) {
   case BLIT_OP_DEST_BLITTER:
-    WriteBlitterBank(baddr, (ReadBlitterBank(baddr) & ~mask) | data);
+    WriteBlitterBank(baddr, (ReadBlitterBank(baddr) & ~mask) | (data & mask));
   case BLIT_OP_DEST_DISPLAY:
-    WriteDisplayBank(daddr, (ReadDisplayBank(daddr) & ~mask) | data);
+    WriteDisplayBank(daddr, (ReadDisplayBank(daddr) & ~mask) | (data & mask));
   //default:
     //assert(false);
   }
@@ -294,9 +294,18 @@ static void STRIPED_SECTION Overlap(int* begin, int* end, int x, int width) {
   *end = Min(8, width - x);
 }
 
-static PerfCounter g_blit_perf;
+static uint32_t STRIPED_SECTION Parallel8(int v) {
+  v = v | (v << 4);
+  v = v | (v << 8);
+  v = v | (v << 16);
+  return v;
+}
+
+static PerfCounter g_blit_setup_perf;
+static PerfCounter g_blit_cycle_perf[4];
 static void STRIPED_SECTION DoBlit(Opcode opcode) {
   //DisableXIPCache();
+  BeginPerf(&g_blit_setup_perf);
 
   int dest_daddr = g_blit_regs[BLIT_REG_DST_ADDR];
   int src_daddr = g_blit_regs[BLIT_REG_SRC_ADDR];
@@ -307,10 +316,14 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int colors = g_blit_regs[BLIT_REG_COLORS];
 
   // Except for particular opcodes, these fields default to nop values.
-  int unmasked = 1;
+  bool mask_en = false;
   if (opcode & BLIT_OP_FLAGS_EN) {
-    unmasked = !(flags & BLIT_FLAG_MASKED);
+    mask_en = flags & BLIT_FLAG_MASKED;
   }
+
+  bool color_en = opcode & BLIT_OP_COLOR_EN;
+  uint32_t bg_color = Parallel8(g_blit_regs[BLIT_REG_COLORS] & 0xF);
+  uint32_t fg_color = Parallel8((g_blit_regs[BLIT_REG_COLORS] >> 4) & 0xF);
 
   int clip_left = 0;
   int clip_right = 0xFFFF;
@@ -319,9 +332,6 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     clip_left = clip & 0xFF;
     clip_right = clip >> 8;
   }
-
-  int bg_color = g_blit_regs[BLIT_REG_COLORS] & 0xF;
-  int fg_color = (g_blit_regs[BLIT_REG_COLORS] >> 4) & 0xF;
 
   int width, height;
   switch (opcode & BLIT_OP_TOPY) {
@@ -341,7 +351,6 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     break;
   }
 
-  bool enable_profiling = (opcode & BLIT_OP_SRC) != BLIT_OP_SRC_STREAM;
   bool src_planar = (opcode & BLIT_OP_SRC) == BLIT_OP_SRC_DISPLAY && (opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN;
   bool dest_planar = (opcode & BLIT_OP_DEST) == BLIT_OP_DEST_DISPLAY && (opcode & BLIT_OP_TOPY) == BLIT_OP_TOPY_PLAN;
 
@@ -357,12 +366,13 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int dest_daddr_word = 0;
   int dest_x = width;
   int dest_y = -1;
+
+  EndPerf(&g_blit_setup_perf);
+
   for (;;) {
     MCycle();
 
-    if (enable_profiling) {
-      BeginPerf(&g_blit_perf);
-    }
+    BeginPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
 
     if (dest_x >= width) {
       dest_line_daddr += pitch;
@@ -386,32 +396,37 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       Overlap(&begin, &end, dest_x, width);
       int num = (end - begin) * 4;
       if (fifo.size >= num) {
-        int clip_low = clip_left - dest_x;
-        int clip_high = clip_right - dest_x;
+        // SIMD 8 4-bit lanes
 
-        uint32_t in_data = Fifo64Pop(&fifo, end*4 - begin*4);
-        uint32_t out_data = 0;
+        const uint32_t one8 = 0x11111111;
+        const uint32_t three8 = 0x33333333;  
+        
+        uint32_t color8 = Fifo64Pop(&fifo, num) << (begin*4);
 
-        for (int i = 0; i < 8; ++i) {
-          out_data >>= 4;
+        // Mask based on clip left and right.
+        int clip_begin = Max(begin, clip_left - dest_x);
+        int clip_end = Min(end, clip_right - dest_x + 1);
+        uint32_t mask8 = ((1 << (clip_end - clip_begin) * 4) - 1) << (clip_begin * 4);
+        
+        if (opcode == OPCODE_IMAGE) {//mask_en) {
+          // Mask based on src_color==0. Bit zero of each lane to mask value.
+          uint32_t color_mask8 = color8;
+          color_mask8 |= (color_mask8 & ~three8) >> 2;
+          color_mask8 |= (color_mask8 & ~one8) >> 1;
+          color_mask8 &= one8;
 
-          if (i >= begin && i < end) {
+          // Mask value to all bits of each lane
+          color_mask8 |= color_mask8 << 1;
+          color_mask8 |= color_mask8 << 2;
 
-            int src_color = in_data & 0xF;
-            in_data >>= 4;
-
-            if ((src_color | unmasked) && (i >= clip_low) && (i <= clip_high)) {
-              if (opcode & BLIT_OP_COLOR_EN) {
-                src_color = (fg_color & src_color) | (bg_color & ~src_color);
-              }
-
-              out_data |= src_color << 28;
-            }
-          }
+          mask8 &= color_mask8;
         }
 
-        uint32_t out_mask = ((1 << ((end-begin) * 4)) - 1) << (begin*4);
-        WriteDestData(opcode, dest_daddr_word, dest_baddr, out_data, out_mask);
+        if (color_en) {
+          color8 = (fg_color & color8) | (bg_color & ~color8);
+        }
+
+        WriteDestData(opcode, dest_daddr_word, dest_baddr, color8, mask8);
 
         dest_x += 8;
         ++dest_daddr_word;
@@ -441,7 +456,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       ++src_daddr_word;
     }
 
-    EndPerf(&g_blit_perf);
+    EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
   }
 }
 
