@@ -180,16 +180,16 @@ static void STRIPED_SECTION WriteBlitterBank(unsigned addr, uint32_t data) {
   g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)] = data;
 }
 
-// Zipped variants all use byte offsets as addr.
-static int STRIPED_SECTION ReadZippedBlitterBank8(unsigned addr) {
+// Packed variants all use byte offsets as addr.
+static int STRIPED_SECTION ReadPackedBlitterBank8(unsigned addr) {
   return g_blit_bank.words8[addr & (BLITTER_BANK_SIZE*4-1)];
 }
 
-static int STRIPED_SECTION ReadZippedBlitterBank16(unsigned addr) {
+static int STRIPED_SECTION ReadPackedBlitterBank16(unsigned addr) {
   return g_blit_bank.words16[(addr/2) & (BLITTER_BANK_SIZE*2-1)];
 }
 
-static uint32_t STRIPED_SECTION ReadZippedBlitterBank32(unsigned addr) {
+static uint32_t STRIPED_SECTION ReadPackedBlitterBank32(unsigned addr) {
   return g_blit_bank.words32[(addr/4) & (BLITTER_BANK_SIZE-1)];
 }
 
@@ -204,20 +204,20 @@ static void STRIPED_SECTION WriteDisplayBank(unsigned addr, uint32_t data) {
 typedef uint32_t (*ReadSourceDataFn)(int daddr, int* baddr_byte);
 
 uint32_t STRIPED_SECTION ReadBlitterSourceData(int daddr, int* baddr_byte) {
-  uint32_t data32 = ReadZippedBlitterBank32(*baddr_byte);
+  uint32_t data32 = ReadPackedBlitterBank32(*baddr_byte);
   *baddr_byte += 4;
   return data32;
 }
 
 uint32_t STRIPED_SECTION UnpackBlitterSourceData_16_32(int daddr, int* baddr_byte) {
-  uint32_t data16 = ReadZippedBlitterBank16(*baddr_byte);
+  uint32_t data16 = ReadPackedBlitterBank16(*baddr_byte);
   uint32_t data32 = g_unpack24[data16 & 0xFF] | (g_unpack24[data16 >> 8] << 16);
   *baddr_byte += 2;
   return data32;
 }
 
 uint32_t STRIPED_SECTION UnpackBlitterSourceData_8_32(int daddr, int* baddr_byte) {
-  int data8 = ReadZippedBlitterBank8(*baddr_byte);
+  int data8 = ReadPackedBlitterBank8(*baddr_byte);
   uint32_t data16 = g_unpack12[data8];
   uint32_t data32 = g_unpack24[data16 & 0xFF] | (g_unpack24[data16 >> 8] << 16);
   *baddr_byte += 1;
@@ -225,7 +225,7 @@ uint32_t STRIPED_SECTION UnpackBlitterSourceData_8_32(int daddr, int* baddr_byte
 }
 
 uint32_t STRIPED_SECTION UnpackBlitterSourceData_8_16(int daddr, int* baddr_byte) {
-  uint32_t data8 = ReadZippedBlitterBank8(*baddr_byte);
+  uint32_t data8 = ReadPackedBlitterBank8(*baddr_byte);
   uint32_t data16 = g_unpack12[data8];
   *baddr_byte += 1;
   return data16 | (data16 << 16);
