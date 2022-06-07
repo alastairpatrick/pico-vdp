@@ -126,11 +126,6 @@ static STRIPED_SECTION int Fifo64Pop(Fifo64* fifo, int n) {
   return bits;
 }
 
-static STRIPED_SECTION void Fifo64Copy(Fifo64* dest, const Fifo64* src) {
-  dest->bits = src->bits;
-  dest->size = src->size;
-}
-
 static void STRIPED_SECTION MCycle() {
   int dot_x, mcycle;
   do {
