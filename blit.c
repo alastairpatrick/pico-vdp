@@ -315,15 +315,17 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
   int colors = g_blit_regs[BLIT_REG_COLORS];
 
-  // Except for particular opcodes, these fields default to nop values.
-  bool mask_en = false;
+  uint32_t mask_disable8 = 0xFFFFFFFF;
   if (opcode & BLIT_OP_FLAGS_EN) {
-    mask_en = flags & BLIT_FLAG_MASKED;
+    mask_disable8 = flags & BLIT_FLAG_MASKED ? 0x00000000 : 0xFFFFFFFF;
   }
 
-  bool color_en = opcode & BLIT_OP_COLOR_EN;
-  uint32_t bg_color = Parallel8(g_blit_regs[BLIT_REG_COLORS] & 0xF);
-  uint32_t fg_color = Parallel8((g_blit_regs[BLIT_REG_COLORS] >> 4) & 0xF);
+  uint32_t bg_color8 = 0x00000000;
+  uint32_t fg_color8 = 0xFFFFFFFF;
+  if (opcode & BLIT_OP_COLOR_EN) {
+    bg_color8 = Parallel8(g_blit_regs[BLIT_REG_COLORS] & 0xF);
+    fg_color8 = Parallel8((g_blit_regs[BLIT_REG_COLORS] >> 4) & 0xF);
+  }
 
   int clip_left = 0;
   int clip_right = 0xFFFF;
@@ -408,23 +410,21 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         int clip_end = Min(end, clip_right - dest_x + 1);
         uint32_t mask8 = ((1 << (clip_end - clip_begin) * 4) - 1) << (clip_begin * 4);
         
-        if (opcode == OPCODE_IMAGE) {//mask_en) {
-          // Mask based on src_color==0. Bit zero of each lane to mask value.
-          uint32_t color_mask8 = color8;
-          color_mask8 |= (color_mask8 & ~three8) >> 2;
-          color_mask8 |= (color_mask8 & ~one8) >> 1;
-          color_mask8 &= one8;
+        // Mask based on src_color==0. Bit zero of each lane to mask value.
+        uint32_t color_mask8 = color8;
+        color_mask8 |= (color_mask8 & ~three8) >> 2;
+        color_mask8 |= (color_mask8 & ~one8) >> 1;
+        color_mask8 &= one8;
 
-          // Mask value to all bits of each lane
-          color_mask8 |= color_mask8 << 1;
-          color_mask8 |= color_mask8 << 2;
+        // Mask value to all bits of each lane
+        color_mask8 |= color_mask8 << 1;
+        color_mask8 |= color_mask8 << 2;
 
-          mask8 &= color_mask8;
-        }
+        // Optionally, apply color mask.
+        mask8 &= (color_mask8 | mask_disable8);
 
-        if (color_en) {
-          color8 = (fg_color & color8) | (bg_color & ~color8);
-        }
+        // Optionally remap colors.
+        color8 = (fg_color8 & color8) | (bg_color8 & ~color8);
 
         WriteDestData(opcode, dest_daddr_word, dest_baddr, color8, mask8);
 
