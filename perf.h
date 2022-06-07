@@ -11,6 +11,7 @@ typedef struct {
   uint64_t total_time;
   int samples;
   int average_time;
+  int max_time;
 } PerfCounter;
 
 void InitPerf();
@@ -31,7 +32,11 @@ static inline void STRIPED_SECTION EndPerf(PerfCounter* counter) {
     return;
   }
   
-  counter->total_time += (counter->begin_time - end_time) & 0x007FFFFF;
+  int time = (counter->begin_time - end_time) & 0x007FFFFF;
+  if (time > counter->max_time) {
+    counter->max_time = time;
+  }
+  counter->total_time += time;
   ++counter->samples;
   counter->average_time = counter->total_time / counter->samples;
   counter->enabled = false;
