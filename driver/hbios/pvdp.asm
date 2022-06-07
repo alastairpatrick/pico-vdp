@@ -12,7 +12,7 @@
 
 ; Configuration
 TERMENABLE      	.SET	TRUE
-_WIDTH                  .EQU    80              ; 42, 64 or 80
+_WIDTH                  .EQU    42              ; 42, 64 or 80
 
 ; Not configuration
 _HEIGHT                 .EQU    24
@@ -335,15 +335,15 @@ _INIT_BLIT_REGS:
 
 #if (_WIDTH == 80)
         ; CLIP = $0200
-        LD      DE, $0200
+        LD      DE, $0300
 #endif
 #if (_WIDTH == 64)
         ; CLIP = $0300
-        LD      DE, $0300
+        LD      DE, $0400
 #endif
 #if (_WIDTH == 42)
         ; CLIP = $0700
-        LD      DE, $0700
+        LD      DE, $0800
 #endif
         ; 
         LD      C, _BCMD_SET_CLIP

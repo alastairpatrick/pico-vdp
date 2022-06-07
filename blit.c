@@ -286,7 +286,7 @@ static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int badd
 
 static void STRIPED_SECTION Overlap(int* begin, int* end, int x, int width) {
   *begin = Max(0, -x);
-  *end = Min(8, width - x);
+  *end = Min(32, width - x);
 }
 
 static uint32_t STRIPED_SECTION Parallel8(int v) {
@@ -328,6 +328,10 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     int clip = g_blit_regs[BLIT_REG_CLIP];
     clip_left = clip & 0xFF;
     clip_right = clip >> 8;
+
+    if (clip_right == 0) {
+      clip_right = 0x100;
+    }
   }
 
   int width, height;
@@ -354,6 +358,11 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   ReadSourceDataFn read_source_data = PrepareReadSourceData(opcode);
 
   Fifo64 fifo = {0};
+
+  // x-coordinates are in bits beyond this point.
+  clip_left *= 4;
+  clip_right *= 4;
+  width *= 4;
 
   int src_line_daddr = src_daddr - pitch;
   int src_daddr_word = 0;
@@ -382,7 +391,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       }
 
       if (dest_planar) {
-        dest_x = -(dest_line_daddr & 0x7);
+        dest_x = -(dest_line_daddr & 0x7) * 4;
       } else {
         dest_x = 0;
       }
@@ -391,19 +400,19 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     {
       int begin, end;
       Overlap(&begin, &end, dest_x, width);
-      int num = (end - begin) * 4;
+      int num = end - begin;
       if (fifo.size >= num) {
         // SIMD 8 4-bit lanes
 
         const uint32_t one8 = 0x11111111;
         const uint32_t three8 = 0x33333333;  
         
-        uint32_t color8 = Fifo64Pop(&fifo, num) << (begin*4);
+        uint32_t color8 = Fifo64Pop(&fifo, num) << begin;
 
         // Mask based on clip left and right.
         int clip_begin = Max(begin, clip_left - dest_x);
-        int clip_end = Min(end, clip_right - dest_x + 1);
-        uint32_t mask8 = ((1 << (clip_end - clip_begin) * 4) - 1) << (clip_begin * 4);
+        int clip_end = Min(end, clip_right - dest_x);
+        uint32_t mask8 = ((1 << (clip_end - clip_begin)) - 1) << clip_begin;
         
         // Mask based on src_color==0. Bit zero of each lane to mask value.
         uint32_t color_mask8 = color8;
@@ -423,7 +432,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
 
         WriteDestData(opcode, dest_daddr_word, dest_baddr, color8, mask8);
 
-        dest_x += 8;
+        dest_x += 32;
         ++dest_daddr_word;
         ++dest_baddr;
       }
@@ -436,7 +445,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       ++src_y;
 
       if (src_planar) {
-        src_x = -(src_line_daddr & 0x7);
+        src_x = -(src_line_daddr & 0x7) * 4;
       } else {
         src_x = 0;
       }
@@ -446,8 +455,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       uint32_t in_data = read_source_data(src_daddr_word, &src_baddr_byte);
       int begin, end;
       Overlap(&begin, &end, src_x, width);
-      Fifo64Push(&fifo, in_data >> (begin*4), (end - begin) * 4);
-      src_x += 8;
+      Fifo64Push(&fifo, in_data >> begin, end - begin);
+      src_x += 32;
       ++src_daddr_word;
     }
 
