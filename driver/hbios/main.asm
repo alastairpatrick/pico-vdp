@@ -3,6 +3,9 @@
 MAIN:
         CALL    PVDP_INIT
 
+        LD      D, $68
+        CALL    PVDP_SET_CURSOR_STYLE
+
         LD      C, 0
 _LOOP1:        
         CALL    PVDP_KEYBOARD_READ
@@ -50,7 +53,7 @@ _MAIN_SCROLL_HOME:
         LD      DE, 0
         CALL    PVDP_SET_CURSOR_POS
         JR      _LOOP1
-        
+
 
 _COL:   .DB     0
 

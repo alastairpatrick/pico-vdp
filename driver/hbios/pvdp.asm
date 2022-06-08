@@ -395,20 +395,27 @@ PVDP_SET_CURSOR_STYLE:
         SRL     D
         LD      H, D
 
-        LD      B, 8
+        LD      B, 7
         LD      C, _REG_SPRITE_BM+15
 
 _CURSOR_LOOP:
-        CALL    _SET_CURSOR_LINE
-
         LD      A, B
         CP      H
-        CALL    M, _CLEAR_CURSOR_LINE
+        JP      M, _CLEAR_CURSOR_LINE
         LD      A, B
         CP      L
-        CALL    P, _CLEAR_CURSOR_LINE
+        JP      P, _CLEAR_CURSOR_LINE
 
-        DJNZ    _CURSOR_LOOP
+        LD      D, $FF
+        JR      _APPLY_CURSOR_LINE
+
+_CLEAR_CURSOR_LINE:
+        LD      D, $00
+_APPLY_CURSOR_LINE:
+        CALL    _SET_CURSOR_LINE
+
+        DEC     B
+        JP      P, _CURSOR_LOOP
 
         XOR     A
         POP     HL
@@ -418,28 +425,24 @@ _CURSOR_LOOP:
 
 _SET_CURSOR_LINE:
 #if _WIDTH == 42
-        LD      D, $0F
-        CALL    _SET_REG_D
+        LD      A, $0F
+        AND     D
+        LD      E, A
+        CALL    _SET_REG_E
 #endif
         DEC     C
 #if _WIDTH == 80
-        LD      D, $3F
+        LD      A, $3F
 #endif
 #if _WIDTH == 64
-        LD      D, $FF
+        LD      A, $FF
 #endif
 #if _WIDTH == 42
-        LD      D, $FF
+        LD      A, $FF
 #endif
-        CALL    _SET_REG_D
-        DEC     C
-        RET
-
-_CLEAR_CURSOR_LINE:
-        LD      D, 0
-        CALL    _SET_REG_D
-        DEC     C
-        CALL    _SET_REG_D
+        AND     D
+        LD      E, A
+        CALL    _SET_REG_E
         DEC     C
         RET
 
