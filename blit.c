@@ -384,8 +384,6 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   clip_right *= 4;
   width *= 4;
 
-  int clips = (clip_left << 16) | clip_right;
-
   src_daddr -= pitch;
   int src_daddr_word = 0;
   int src_x = width;
@@ -454,8 +452,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         uint32_t color8 = Fifo64Pop(&fifo, num) << begin;
 
         // Mask based on clip left and right.
-        int clip_begin = Max(begin, (clips>>16) - dest_x);
-        int clip_end = Min(end, (clips&0xFFFF) - dest_x);
+        int clip_begin = Max(begin, clip_left - dest_x);
+        int clip_end = Min(end, clip_right - dest_x);
         uint32_t mask8 = ((1 << (clip_end - clip_begin)) - 1) << clip_begin;
         
         // Mask based on src_color==0. Bit zero of each lane to mask value.
