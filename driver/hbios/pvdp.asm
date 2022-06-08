@@ -338,8 +338,8 @@ _INIT_BLIT_REGS:
         LD      DE, $0400
 #endif
 #if (_WIDTH == 64)
-        ; CLIP = $0300
-        LD      DE, $0300
+        ; CLIP = $0400
+        LD      DE, $0400
 #endif
 #if (_WIDTH == 42)
         ; CLIP = $0600
@@ -396,22 +396,18 @@ PVDP_SET_CURSOR_STYLE:
         LD      H, D
 
         LD      B, 8
-        LD      C, _REG_SPRITE_BM+14
+        LD      C, _REG_SPRITE_BM+15
 
 _CURSOR_LOOP:
-        LD      D, $FF
-        CALL    _SET_REG_D
+        CALL    _SET_CURSOR_LINE
 
-        LD      D, $00
         LD      A, B
         CP      H
-        CALL    M, _SET_REG_D
+        CALL    M, _CLEAR_CURSOR_LINE
         LD      A, B
         CP      L
-        CALL    P, _SET_REG_D
+        CALL    P, _CLEAR_CURSOR_LINE
 
-        DEC     C
-        DEC     C
         DJNZ    _CURSOR_LOOP
 
         XOR     A
@@ -420,6 +416,32 @@ _CURSOR_LOOP:
         POP     BC
         RET
 
+_SET_CURSOR_LINE:
+#if _WIDTH == 42
+        LD      D, $0F
+        CALL    _SET_REG_D
+#endif
+        DEC     C
+#if _WIDTH == 80
+        LD      D, $3F
+#endif
+#if _WIDTH == 64
+        LD      D, $FF
+#endif
+#if _WIDTH == 42
+        LD      D, $FF
+#endif
+        CALL    _SET_REG_D
+        DEC     C
+        RET
+
+_CLEAR_CURSOR_LINE:
+        LD      D, 0
+        CALL    _SET_REG_D
+        DEC     C
+        CALL    _SET_REG_D
+        DEC     C
+        RET
 
 ; Entry:
 ;  D: Row (0 indexed)
@@ -1294,7 +1316,7 @@ _KEY_BUF:
 _PALETTE:
 #if (_WIDTH == 80) | (_WIDTH == 64)
                         .DB     %00000000
-                        .DB     %10100100
+                        .DB     %10101101
                         .DB     %01010010
                         .DB     %11111111
 #else
