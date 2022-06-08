@@ -120,7 +120,7 @@ void UpdateKeyboardLEDs() {
     led_state |= KEYBOARD_LED_SCROLLLOCK;
   }
 
-  if (led_state != g_led_state) {
+  if (g_kbd_dev_addr && led_state != g_led_state) {
     g_led_state = led_state;
     tuh_hid_set_report(g_kbd_dev_addr, g_kbd_instance, 0, HID_REPORT_TYPE_OUTPUT, &led_state, sizeof(led_state));
   }

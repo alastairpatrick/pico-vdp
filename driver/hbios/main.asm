@@ -17,6 +17,9 @@ _LOOP1:
         CP      $F7
         JR      Z, _MAIN_SCROLL_COPY
 
+        CP      $F6
+        JR      Z, _MAIN_SCROLL_HOME
+
         CALL    PVDP_WRITE_CHAR
 
         LD      A, (_COL)
@@ -43,6 +46,12 @@ _MAIN_SCROLL_COPY:
         CALL    PVDP_COPY
         JR      _LOOP1
         
+_MAIN_SCROLL_HOME:
+        LD      DE, 0
+        CALL    PVDP_SET_CURSOR_POS
+        JR      _LOOP1
+        
+
 _COL:   .DB     0
 
 _DELAY:

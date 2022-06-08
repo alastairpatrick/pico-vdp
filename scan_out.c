@@ -54,7 +54,7 @@ static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
 };
 
 bool STRIPED_SECTION IsBlitClockEnabled(int dot_x) {
-  if (dot_x < g_horz_blank_width) {
+  if (dot_x < g_blank_logical_width) {
     return true;
   } else {
     return g_display_blit_clock_enabled;

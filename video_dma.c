@@ -55,7 +55,8 @@ const VideoTiming g_timing1024_768 = {
   { 768, 3, 6, 29 },
 };
 
-int g_horz_blank_width;
+int g_blank_logical_width;
+int g_total_logical_width;
 
 static VideoTiming g_timing;
 static int g_horz_shift, g_vert_shift;
@@ -293,9 +294,9 @@ void SetVideoResolution(int horz_shift, int vert_shift) {
   pwm_set_counter(VIDEO_PWM, 0);
 
   // Want a period of total_logical_width so set WRAP to total_logical_width-1.
-  g_horz_blank_width = (g_timing.horz.front_porch_pixels + g_timing.horz.sync_pixels + g_timing.horz.back_porch_pixels) >> horz_shift;
-  int total_logical_width = (g_timing.horz.display_pixels >> horz_shift) + g_horz_blank_width;
-  pwm_set_wrap(VIDEO_PWM, total_logical_width - 1);
+  g_blank_logical_width = (g_timing.horz.front_porch_pixels + g_timing.horz.sync_pixels + g_timing.horz.back_porch_pixels) >> horz_shift;
+  g_total_logical_width = (g_timing.horz.display_pixels >> horz_shift) + g_blank_logical_width;
+  pwm_set_wrap(VIDEO_PWM, g_total_logical_width - 1);
 
   // +1 because PIO timing is 2 cycles/pixel.
   int pwm_clk_div = pio_clk_div << (vert_shift + 1);

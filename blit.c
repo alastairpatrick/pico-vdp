@@ -14,7 +14,14 @@
 
 #define NUM_BLIT_REGS 8
 #define BLITTER_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
+
+#define OPTIMIZE
+
+#ifdef OPTIMIZE
 #define MCYCLE_TIME 16
+#else
+#define MCYCLE_TIME 64
+#endif
 
 enum {
   BLIT_FLAG_UNPACK        = 0x0300,
@@ -88,7 +95,9 @@ typedef struct {
 
 static DisplayBank* g_blit_display_bank;
 static uint16_t g_blit_regs[NUM_BLIT_REGS];
-static uint16_t g_last_mcycle;
+
+static int g_last_dot_x;
+static uint64_t g_scan_dot_cycle, g_blit_dot_cycle;
 
 static union {
   uint8_t words8[BLITTER_BANK_SIZE*4];
@@ -100,7 +109,12 @@ static uint16_t g_unpack12[0x100];
 static uint16_t g_unpack24[0x100];
 
 #pragma GCC push_options
+
+#ifdef OPTIMIZE
 #pragma GCC optimize("O3")
+#else
+#pragma GCC optimize("Og")
+#endif
 
 static STRIPED_SECTION int Max(int a, int b) {
   return a > b ? a : b;
@@ -126,22 +140,29 @@ static STRIPED_SECTION int Fifo64Pop(Fifo64* fifo, int n) {
   return bits;
 }
 
-static void STRIPED_SECTION MCycle() {
-  int dot_x, mcycle;
+static void STRIPED_SECTION MCycle(int cycles) {
+  assert(g_scan_dot_cycle - g_blit_dot_cycle < g_total_logical_width * 2);
+
+  int dot_x;
   do {
+    g_blit_dot_cycle += MCYCLE_TIME * cycles;
+
     do {
       dot_x = GetDotX();
-      mcycle = dot_x / MCYCLE_TIME;
-    } while (mcycle == g_last_mcycle);
+      int elapsed = dot_x - g_last_dot_x;
+      if (elapsed < 0) {
+         elapsed += g_total_logical_width;
+      }
 
-    g_last_mcycle = mcycle;
-
+      g_last_dot_x = dot_x;
+      g_scan_dot_cycle += elapsed;
+    } while (g_blit_dot_cycle > g_scan_dot_cycle);
   } while (!IsBlitClockEnabled(dot_x));
 }
 
 static int STRIPED_SECTION PopCmdFifo8() {
   while (IsFifoEmpty()) {
-    MCycle();
+    MCycle(1);
   }
   return PopFifo();
 }
@@ -377,9 +398,31 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   EndPerf(&g_blit_setup_perf);
 
   for (;;) {
-    MCycle();
-
     BeginPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
+    
+    if (src_x >= width) {
+      //MCycle(1);
+
+      src_daddr += pitch;
+      src_daddr_word = src_daddr >> 3;
+
+      ++src_y;
+
+      if (src_planar) {
+        src_x = -(src_daddr & 0x7) * 4;
+      } else {
+        src_x = 0;
+      }
+    }
+
+    if (fifo.size <= 32 && src_y < height) {
+      uint32_t in_data = read_source_data(src_daddr_word, &src_baddr_byte);
+      int begin, end;
+      Overlap(&begin, &end, src_x, width);
+      Fifo64Push(&fifo, in_data >> begin, end - begin);
+      src_x += 32;
+      ++src_daddr_word;
+    }
 
     if (dest_x >= width) {
       dest_daddr += pitch;
@@ -431,37 +474,19 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         // Optionally remap colors.
         color8 = (fg_color8 & color8) | (bg_color8 & ~color8);
 
+        EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
+        MCycle(2);
         WriteDestData(opcode, dest_daddr_word, dest_baddr, color8, mask8);
 
         dest_x += 32;
         ++dest_daddr_word;
         ++dest_baddr;
-      }
-    }
-    
-    if (src_x >= width) {
-      src_daddr += pitch;
-      src_daddr_word = src_daddr >> 3;
-
-      ++src_y;
-
-      if (src_planar) {
-        src_x = -(src_daddr & 0x7) * 4;
       } else {
-        src_x = 0;
+        EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
+        MCycle(1);
       }
     }
 
-    if (fifo.size <= 32 && src_y < height) {
-      uint32_t in_data = read_source_data(src_daddr_word, &src_baddr_byte);
-      int begin, end;
-      Overlap(&begin, &end, src_x, width);
-      Fifo64Push(&fifo, in_data >> begin, end - begin);
-      src_x += 32;
-      ++src_daddr_word;
-    }
-
-    EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
   }
 }
 
@@ -471,7 +496,7 @@ static void STRIPED_SECTION DoSwap(SwapMode mode, int line_idx) {
   SwapBanks(mode, line_idx);
 
   while (IsSwapPending()) {
-    MCycle();
+    MCycle(1);
   }
 
   g_blit_display_bank = GetBlitBank();
@@ -494,10 +519,11 @@ void InitBlit() {
 
 void STRIPED_SECTION BlitMain() {
   InitBlit();
+  g_last_dot_x = GetDotX();
 
   for (;;) {
     Opcode opcode = (Opcode) PopCmdFifo8();
-    MCycle();
+    MCycle(1);
 
     switch (opcode) {
     case OPCODE_SET0:

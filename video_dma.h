@@ -32,7 +32,8 @@ extern const VideoTiming g_timing640_480;
 extern const VideoTiming g_timing800_600;
 extern const VideoTiming g_timing1024_768;
 
-extern int g_horz_blank_width;
+extern int g_blank_logical_width;
+extern int g_total_logical_width;
 
 void InitVideo(const VideoTiming* timing);
 void SetVideoResolution(int horz_shift, int vert_shift);
