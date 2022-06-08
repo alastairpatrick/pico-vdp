@@ -90,14 +90,14 @@ static DisplayBank* g_blit_display_bank;
 static uint16_t g_blit_regs[NUM_BLIT_REGS];
 static uint16_t g_last_mcycle;
 
-union {
+static union {
   uint8_t words8[BLITTER_BANK_SIZE*4];
   uint16_t words16[BLITTER_BANK_SIZE*2];
   uint32_t words32[BLITTER_BANK_SIZE];
 } g_blit_bank;
 
-uint16_t g_unpack12[0x100];
-uint16_t g_unpack24[0x100];
+static uint16_t g_unpack12[0x100];
+static uint16_t g_unpack24[0x100];
 
 #pragma GCC push_options
 #pragma GCC optimize("O3")
