@@ -334,16 +334,16 @@ _INIT_BLIT_REGS:
         CALL    _BLIT_CMD_DE
 
 #if (_WIDTH == 80)
-        ; CLIP = $0200
-        LD      DE, $0300
+        ; CLIP = $0400
+        LD      DE, $0400
 #endif
 #if (_WIDTH == 64)
         ; CLIP = $0300
-        LD      DE, $0400
+        LD      DE, $0300
 #endif
 #if (_WIDTH == 42)
-        ; CLIP = $0700
-        LD      DE, $0800
+        ; CLIP = $0600
+        LD      DE, $0600
 #endif
         ; 
         LD      C, _BCMD_SET_CLIP
@@ -1312,7 +1312,7 @@ _PALETTE:
                         .DB     %00111111
                         .DB     %11010010
                         .DB     %11010111
-                        .DB     %11111010
+                        .DB     %11111011
                         .DB     %11111111
 #endif
 _PALETTE_END:
