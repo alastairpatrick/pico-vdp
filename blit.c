@@ -308,7 +308,6 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int src_baddr_byte = g_blit_regs[BLIT_REG_SRC_ADDR] * 4;
   int flags = g_blit_regs[BLIT_REG_FLAGS];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
-  int colors = g_blit_regs[BLIT_REG_COLORS];
 
   uint32_t mask_disable8 = 0xFFFFFFFF;
   if (opcode & BLIT_OP_FLAGS_EN) {
@@ -364,11 +363,13 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   clip_right *= 4;
   width *= 4;
 
-  int src_line_daddr = src_daddr - pitch;
+  int clips = (clip_left << 16) | clip_right;
+
+  src_daddr -= pitch;
   int src_daddr_word = 0;
   int src_x = width;
   int src_y = -1;
-  int dest_line_daddr = dest_daddr - pitch;
+  dest_daddr -= pitch;
   int dest_daddr_word = 0;
   int dest_x = width;
   int dest_y = -1;
@@ -381,8 +382,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     BeginPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
 
     if (dest_x >= width) {
-      dest_line_daddr += pitch;
-      dest_daddr_word = dest_line_daddr >> 3;
+      dest_daddr += pitch;
+      dest_daddr_word = dest_daddr >> 3;
 
       ++dest_y;
       if (dest_y == height) {
@@ -391,7 +392,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
       }
 
       if (dest_planar) {
-        dest_x = -(dest_line_daddr & 0x7) * 4;
+        dest_x = -(dest_daddr & 0x7) * 4;
       } else {
         dest_x = 0;
       }
@@ -410,8 +411,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         uint32_t color8 = Fifo64Pop(&fifo, num) << begin;
 
         // Mask based on clip left and right.
-        int clip_begin = Max(begin, clip_left - dest_x);
-        int clip_end = Min(end, clip_right - dest_x);
+        int clip_begin = Max(begin, (clips>>16) - dest_x);
+        int clip_end = Min(end, (clips&0xFFFF) - dest_x);
         uint32_t mask8 = ((1 << (clip_end - clip_begin)) - 1) << clip_begin;
         
         // Mask based on src_color==0. Bit zero of each lane to mask value.
@@ -439,13 +440,13 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
     }
     
     if (src_x >= width) {
-      src_line_daddr += pitch;
-      src_daddr_word = src_line_daddr >> 3;
+      src_daddr += pitch;
+      src_daddr_word = src_daddr >> 3;
 
       ++src_y;
 
       if (src_planar) {
-        src_x = -(src_line_daddr & 0x7) * 4;
+        src_x = -(src_daddr & 0x7) * 4;
       } else {
         src_x = 0;
       }
