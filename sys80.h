@@ -56,11 +56,11 @@ extern volatile Sys80Registers g_sys80_regs;
 
 void InitSys80();
 
-static inline bool STRIPED_SECTION IsFifoEmpty() {
+static inline bool STRIPED_SECTION IsSys80FifoEmpty() {
   return pio_sm_is_rx_fifo_empty(SYS80_PIO, 3);
 }
 
-static inline int STRIPED_SECTION PopFifo() {
+static inline int STRIPED_SECTION PopSys80Fifo() {
   return pio_sm_get(SYS80_PIO, 3);
 }
 

@@ -161,10 +161,10 @@ static void STRIPED_SECTION MCycle(int cycles) {
 }
 
 static int STRIPED_SECTION PopCmdFifo8() {
-  while (IsFifoEmpty()) {
+  while (IsSys80FifoEmpty()) {
     MCycle(1);
   }
-  return PopFifo();
+  return PopSys80Fifo();
 }
 
 static int STRIPED_SECTION PopCmdFifo16() {
