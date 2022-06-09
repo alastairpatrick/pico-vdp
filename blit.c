@@ -481,7 +481,7 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         ++dest_baddr;
       } else {
         EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
-        MCycle(1);
+        MCycle(2);
       }
     }
 
@@ -490,7 +490,8 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
 
 #pragma GCC pop_options
 
-static void STRIPED_SECTION DoSwap(SwapMode mode, int line_idx) {
+static void STRIPED_SECTION DoSwap(SwapMode mode) {
+  int line_idx = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
   SwapBanks(mode, line_idx);
 
   while (IsSwapPending()) {
@@ -538,7 +539,7 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SWAP1:
     case OPCODE_SWAP2:
     case OPCODE_SWAP3:
-      DoSwap((SwapMode) (opcode & SWAP_MASK), PopCmdFifo8());
+      DoSwap((SwapMode) (opcode & SWAP_MASK));
       break;
     default:
       assert(opcode & OPCODE_BLIT_BASE);
