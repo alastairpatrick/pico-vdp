@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD 17)
 pico_sdk_init()
 
 add_executable(pico-vdp
+  audio.c
   blit.c
   cdc.c
   hid.c
@@ -19,6 +20,8 @@ add_executable(pico-vdp
   scan_out.c
   sys80.c
   video_dma.c
+
+  third_party/libayemu/ay8912.c
 )
 
 # Make sure TinyUSB can find tusb_config.h

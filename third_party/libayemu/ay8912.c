@@ -1,8 +1,14 @@
 /* AY/YM emulator implementation. */
 
+#pragma GCC optimize("O3")
+
+#include "pico/stdlib.h"
+
 #include "ayemu.h"
 
 #define debuglog stderr;
+
+#define STRIPED_SECTION __not_in_flash("Striped")
 
 char *ayemu_err;
 
@@ -47,7 +53,7 @@ static int KAY_YM_table [32] =
     21759, 26148, 30523, 34879, 41434, 49404, 57492, 65535};
 
 /* default equlaizer (layout) settings for AY and YM, 7 stereo types */
-static const int default_layout [2][7][6] = {
+int default_layout [2][7][6] = {
   {
     /* A_l, A_r,  B_l, B_r,  C_l, C_r */
 
@@ -71,11 +77,11 @@ static const int default_layout [2][7][6] = {
 };
 
 
-static int check_magic(ayemu_ay_t *ay)
+static int STRIPED_SECTION check_magic(ayemu_ay_t *ay)
 {
   if (ay->magic == MAGIC1)
     return 1;
-  fprintf(stderr, "libayemu: passed pointer %p to uninitialized ayemu_ay_t structure\n", ay);
+  //fprintf(stderr, "libayemu: passed pointer %p to uninitialized ayemu_ay_t structure\n", ay);
   return 0;
 }
 
@@ -305,15 +311,15 @@ int ayemu_set_stereo(ayemu_ay_t *ay, ayemu_stereo_t stereo_type, int *custom_eq)
 
 
 #define WARN_IF_REGISTER_GREAT_THAN(r,m) \
-if (*(regs + r) > m) \
-   fprintf(stderr, "ayemu_set_regs: warning: possible bad register data- R%d > %d\n", r, m)
+//if (*(regs + r) > m) \
+//   fprintf(stderr, "ayemu_set_regs: warning: possible bad register data- R%d > %d\n", r, m)
 
 
 /** Assign values for AY registers.
  *
  * You must pass array of char [14] to this function
  */
-void ayemu_set_regs(ayemu_ay_t *ay, ayemu_ay_reg_frame_t regs)
+void STRIPED_SECTION ayemu_set_regs(ayemu_ay_t *ay, ayemu_ay_reg_frame_t regs)
 {
   if (!check_magic(ay)) return;
 
@@ -355,7 +361,7 @@ void ayemu_set_regs(ayemu_ay_t *ay, ayemu_ay_reg_frame_t regs)
 }
 
 
-static void prepare_generation(ayemu_ay_t *ay)
+static void STRIPED_SECTION prepare_generation(ayemu_ay_t *ay)
 {
   int vol, max_l, max_r;
 
@@ -381,9 +387,9 @@ static void prepare_generation(ayemu_ay_t *ay)
     }
   }
 
-  /* динамическая настройка глобального коэффициента усиления
-     подразумевается, что в vols [x][31] лежит самая большая громкость
-     TODO: Сделать проверку на это ;-)
+  /* О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
+     О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫, О©╫О©╫О©╫ О©╫ vols [x][31] О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
+     TODO: О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫ О©╫О©╫ О©╫О©╫О©╫ ;-)
   */
   max_l = ay->vols[0][31] + ay->vols[2][31] + ay->vols[3][31];
   max_r = ay->vols[1][31] + ay->vols[3][31] + ay->vols[5][31];
@@ -399,7 +405,7 @@ static void prepare_generation(ayemu_ay_t *ay)
  * Return value: pointer to next data in output sound buffer
  * \retval \b 1 if OK, \b 0 if error occures.
  */
-void *ayemu_gen_sound(ayemu_ay_t *ay, void *buff, size_t sound_bufsize)
+void * STRIPED_SECTION ayemu_gen_sound(ayemu_ay_t *ay, void *buff, size_t sound_bufsize)
 {
   int mix_l, mix_r;
   int tmpvol;

@@ -20,7 +20,8 @@ typedef struct {
   union {
     struct {
       // Audio / PIO range $0x, $1x
-      uint8_t dummy[31];
+      uint8_t ay[14];
+      uint8_t pad4[17];
       uint8_t leds;                 // $1F
 
       // Video generator range $2x, $3x

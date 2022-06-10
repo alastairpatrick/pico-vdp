@@ -310,8 +310,10 @@ void InitVideoInterrupts() {
   dma_irqn_set_channel_enabled(DMA_IRQ_IDX, g_dma_data_chan, true);
   irq_add_shared_handler(DMA_IRQ_0 + DMA_IRQ_IDX, FrameISR, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
   irq_set_enabled(DMA_IRQ_0 + DMA_IRQ_IDX, true);
+  irq_set_priority(DMA_IRQ_0 + DMA_IRQ_IDX, 0x00);
 
   pio_set_irq0_source_enabled(PIO, pis_interrupt0, true);
   irq_set_exclusive_handler(PIO_IRQ, LineISR);
+  irq_set_priority(PIO_IRQ, 0x00);
   irq_set_enabled(PIO_IRQ, true);
 }
