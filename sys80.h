@@ -19,7 +19,10 @@ typedef struct {
   // Read-write registers
   union {
     struct {
+      // Audio / PIO range $0x, $1x
       uint8_t dummy[32];
+
+      // Video generator range $2x, $3x
       uint8_t lines_page;           // $20
       uint8_t font_page;            // $21
       uint8_t border_rgb;           // $22
@@ -34,9 +37,9 @@ typedef struct {
       uint8_t sprite_duty;          // $2E
       uint8_t sprite_rgb;           // $2F
       uint16_t sprite_bitmap[8];    // $30
-      uint16_t fifo_begin;          // $40
-      uint16_t fifo_end;            // $42
-      uint8_t fifo_wrap;            // $44
+
+      // Blitter range $4x
+      uint8_t fifo_wrap;            // $40
     };
     uint8_t rw_bytes[128];
   };
@@ -44,10 +47,19 @@ typedef struct {
   // Read-only registers
   union {
     struct {
+      // Audio / PIO range $8x, $9x
       uint8_t kbd_rows[KEYBOARD_ROWS];  // $80
       uint8_t kbd_dummy[16-KEYBOARD_ROWS];
-      uint8_t mouse_x, mouse_y;
-      uint8_t mouse_buttons;
+      uint8_t mouse_x, mouse_y;     // $90, $91
+      uint8_t mouse_buttons;        // $92
+      uint8_t pad2[14];
+
+      // Video generator range $Ax, $Bx
+      uint8_t pad3[32];
+
+      // Blitter range $Cx
+      uint16_t fifo_begin;          // $C0
+      uint16_t fifo_end;            // $C2
     };
     uint8_t ro_bytes[128];
   };

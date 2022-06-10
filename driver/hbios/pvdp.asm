@@ -25,9 +25,7 @@ _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
 _PORT_BLIT              .EQU    $B2
 
-_REG_FIFO_BEGIN         .EQU    $40
-_REG_FIFO_END           .EQU    $42
-_REG_FIFO_WRAP          .EQU    $44
+_REG_FIFO_WRAP          .EQU    $40
 _REG_FONT_PG            .EQU    $21
 _REG_LEDS               .EQU    $25
 _REG_LINES_PG           .EQU    $20
