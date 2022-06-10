@@ -12,8 +12,6 @@ typedef enum {
   DISPLAY_MODE_LORES_4,
   DISPLAY_MODE_LORES_16,
   DISPLAY_MODE_LORES_256,
-  DISPLAY_MODE_LORES_TEXT = 14,
-  DISPLAY_MODE_HIRES_TEXT,
 } DisplayMode;
 
 typedef struct {
