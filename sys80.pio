@@ -133,18 +133,32 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     sys80_fifo_offset_entry,
   };
 
-  const static int sm_auto_pull[4] = {
+  const static int sm_pull_level[4] = {
     8,
     8,
     8,
     -1,
   };
 
-  const static int sm_auto_push[4] = {
+  const static bool sm_auto_pull[4] = {
+    true,
+    true,
+    true,
+    false,
+  };
+
+  const static int sm_push_level[4] = {
     32,
     8,
     8,
     -1,
+  };
+
+  const static bool sm_auto_push[4] = {
+    true,
+    true,
+    true,
+    false,
   };
 
   const static enum pio_fifo_join sm_fifo_join[4] = {
@@ -159,10 +173,10 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   sm_config_set_wrap(&c, offset + sm_wrap_target[sm], offset + sm_wrap[sm]);
 
   sm_config_set_in_pins(&c, DATA_PINS);
-  sm_config_set_in_shift(&c, false, sm_auto_push[sm] >= 0, sm_auto_push[sm]);
+  sm_config_set_in_shift(&c, false, sm_auto_push[sm], sm_push_level[sm]);
 
   sm_config_set_out_pins(&c, DATA_PINS, 8);
-  sm_config_set_out_shift(&c, false, sm_auto_pull[sm] >= 0, sm_auto_pull[sm]);
+  sm_config_set_out_shift(&c, false, sm_auto_pull[sm], sm_pull_level[sm]);
 
   sm_config_set_set_pins(&c, DATA_PINS, 5);
 
