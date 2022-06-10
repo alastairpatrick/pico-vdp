@@ -20,7 +20,8 @@ typedef struct {
   union {
     struct {
       // Audio / PIO range $0x, $1x
-      uint8_t dummy[32];
+      uint8_t dummy[31];
+      uint8_t leds;                 // $1F
 
       // Video generator range $2x, $3x
       uint8_t lines_page;           // $20
@@ -29,8 +30,7 @@ typedef struct {
       uint8_t border_left: 4;       // $23
       uint8_t border_right: 4;
       uint8_t start_line;           // $24
-      uint8_t leds;                 // $25
-      uint8_t pad[5];
+      uint8_t pad[6];
       uint8_t sprite_x;             // $2B
       uint8_t sprite_y;             // $2C
       uint8_t sprite_period;        // $2D
@@ -55,7 +55,8 @@ typedef struct {
       uint8_t pad2[14];
 
       // Video generator range $Ax, $Bx
-      uint8_t pad3[32];
+      uint8_t current_y;            // $A0
+      uint8_t pad3[31];
 
       // Blitter range $Cx
       uint16_t fifo_begin;          // $C0

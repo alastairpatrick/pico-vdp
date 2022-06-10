@@ -269,6 +269,8 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
+  g_sys80_regs.current_y = y;
+  
   if (g_lines_enabled) {
     const int max_lines = 256;
     int lines_high = (g_sys80_regs.lines_page & DISPLAY_PAGE_MASK) * DISPLAY_PAGE_SIZE;
