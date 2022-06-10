@@ -85,6 +85,21 @@ void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) 
   }
 }
 
+static void STRIPED_SECTION ConfigureInterpolator(int shift_bits) {
+  interp_config cfg;
+  
+  cfg = interp_default_config();
+  interp_config_set_shift(&cfg, shift_bits);
+  interp_set_config(interp0, 0, &cfg);
+  interp_set_config(interp1, 0, &cfg);
+
+  cfg = interp_default_config();
+  interp_config_set_cross_input(&cfg, true);
+  interp_config_set_mask(&cfg, 0, shift_bits - 1);
+  interp_set_config(interp0, 1, &cfg);
+  interp_set_config(interp1, 1, &cfg);
+}
+
 static uint32_t SCAN_OUT_INNER_SECTION ReadPixelData() {
   uint32_t data = g_scan_bank->words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
   ++g_pixels_addr;
@@ -92,100 +107,95 @@ static uint32_t SCAN_OUT_INNER_SECTION ReadPixelData() {
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutLores2(uint8_t* dest, int width) {
+  ConfigureInterpolator(1);
+
   for (int x = 0; x < width/64; ++x) {
-    uint32_t indices32 = ReadPixelData();
+    interp0->accum[0] = ReadPixelData();
 
     for (int i = 0; i < 32; ++i) {
-      *dest++ = *dest++ = g_palette[indices32 & 0x1];
-      indices32 >>= 1;
+      *dest++ = *dest++ = g_palette[interp0->pop[1]];
     }
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutHires2(uint8_t* dest, int width) {
+  ConfigureInterpolator(1);
+
   for (int x = 0; x < width/32; ++x) {
-    uint32_t indices32 = ReadPixelData();
+    interp0->accum[0] = ReadPixelData();
 
     #pragma GCC unroll 4
     for (int i = 0; i < 32; ++i) {
-      *dest++ = g_palette[indices32 & 0x1];
-      indices32 >>= 1;
+      dest[i] = g_palette[interp0->pop[1]];
     }
+    dest += 32;
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutLores4(uint8_t* dest, int width) {
+  ConfigureInterpolator(1);
+
   for (int x = 0; x < width/32; ++x) {
-    uint32_t indices16 = ReadPixelData();
+    interp0->accum[0] = ReadPixelData();
 
     for (int i = 0; i < 16; ++i) {
-      *dest++ = *dest++ = g_palette[indices16 & 0x3];
-      indices16 >>= 2;
+      *dest++ = *dest++ = g_palette[interp0->pop[1]];
     }
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutHires4(uint8_t* dest, int width) {
-  interp_config cfg;
-  
-  cfg = interp_default_config();
-  interp_config_set_shift(&cfg, 2);
-  interp_set_config(interp0, 0, &cfg);
-
-  cfg = interp_default_config();
-  interp_config_set_cross_input(&cfg, true);
-  interp_config_set_mask(&cfg, 0, 1);
-  interp_set_config(interp0, 1, &cfg);
+  ConfigureInterpolator(2);
 
   for (int x = 0; x < width/16; ++x) {
     interp0->accum[0] = ReadPixelData();
 
-    #pragma GCC unroll 16
+    #pragma GCC unroll 4
     for (int i = 0; i < 16; ++i) {
-      *dest++ = g_palette[interp0->pop[1]];
+      dest[i] = g_palette[interp0->pop[1]];
     }
+    dest += 16;
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
+  ConfigureInterpolator(4);
+
   for (int x = 0; x < width/16; ++x) {
-    uint32_t indices8 = ReadPixelData();
+    interp0->accum[0] = ReadPixelData();
 
     for (int i = 0; i < 8; ++i) {
-      *dest++ = *dest++ = g_palette[indices8 & 0xF];
-      indices8 >>= 4;
+      *dest++ = *dest++ = g_palette[interp0->pop[1]];
     }
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutHires16(uint8_t* dest, int width) {
+  ConfigureInterpolator(4);
+
   for (int x = 0; x < width/16; ++x) {
-    uint32_t indices8_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    uint32_t indices8_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    interp0->accum[0] = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    interp1->accum[0] = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
     ++g_pixels_addr;
 
     for (int i = 0; i < 8; ++i) {
-      *dest++ = g_palette[indices8_a & 0xF];
-      indices8_a >>= 4;
-
-      *dest++ = g_palette[indices8_b & 0xF];
-      indices8_b >>= 4;
+      *dest++ = g_palette[interp0->pop[1]];
+      *dest++ = g_palette[interp1->pop[1]];
     }
   }
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutLores256(uint8_t* dest, int width) {
+  ConfigureInterpolator(8);
+
   for (int x = 0; x < width/8; ++x) {
-    uint32_t colors4_a = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    uint32_t colors4_b = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    interp0->accum[0] = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
+    interp0->accum[1] = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
     ++g_pixels_addr;
 
     for (int i = 0; i < 4; ++i) {
-      *dest++ = colors4_a;
-      colors4_a >>= 8;
-
-      *dest++ = colors4_b;
-      colors4_b >>= 8;
+      *dest++ = interp0->pop[1];
+      *dest++ = interp1->pop[1];
     }
   }
 }
