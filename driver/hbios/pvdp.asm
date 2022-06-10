@@ -112,7 +112,7 @@ _READY_LOOP:
 
 #if _ENABLE_FIFO
         ; Initialize blitter FIFO
-        LD      D, 4
+        LD      D, 8
         LD      C, _REG_FIFO_WRAP
         CALL    _SET_REG_D
 #endif

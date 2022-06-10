@@ -15,7 +15,7 @@
 #define NUM_BLIT_REGS 8
 #define BLITTER_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
 
-//#define OPTIMIZE
+#define OPTIMIZE
 
 #ifdef OPTIMIZE
 #define MCYCLE_TIME 16
@@ -204,6 +204,10 @@ static int STRIPED_SECTION PopCmdFifo(int n) {
 
       int fifo_and = (1 << g_sys80_regs.fifo_wrap) - 1;
       g_sys80_regs.fifo_begin = fifo_begin = (fifo_begin + 1) & fifo_and;
+    } else if (!IsSys80FifoEmpty()) {
+      // This path is needed used the external FIFO is disabled, i.e. fifo_and == 0.
+      uint32_t data = PopSys80Fifo();
+      Fifo64Push(&g_cmd_fifo, data, 32);
     }
 
     MCycle(1);
