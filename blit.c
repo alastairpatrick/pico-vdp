@@ -183,7 +183,7 @@ static void STRIPED_SECTION MCycle(int cycles) {
       continue;
     }
 
-    if (IsBlitClockEnabled(dot_x)) {
+    if (!IsBlitClockEnabled(dot_x)) {
       g_blit_dot_cycle += MCYCLE_TIME;
       continue;
     }
