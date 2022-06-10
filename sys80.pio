@@ -162,7 +162,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   sm_config_set_in_shift(&c, false, sm_auto_push[sm] >= 0, sm_auto_push[sm]);
 
   sm_config_set_out_pins(&c, DATA_PINS, 8);
-  sm_config_set_out_shift(&c, true /*right shift*/, sm_auto_pull[sm] >= 0, sm_auto_pull[sm]);
+  sm_config_set_out_shift(&c, false, sm_auto_pull[sm] >= 0, sm_auto_pull[sm]);
 
   sm_config_set_set_pins(&c, DATA_PINS, 5);
 
