@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include "hardware/interp.h"
 #include "pico/stdlib.h"
 
 #include "section.h"
@@ -125,12 +126,23 @@ static void SCAN_OUT_INNER_SECTION ScanOutLores4(uint8_t* dest, int width) {
 }
 
 static void SCAN_OUT_INNER_SECTION ScanOutHires4(uint8_t* dest, int width) {
-  for (int x = 0; x < width/16; ++x) {
-    uint32_t indices16 = ReadPixelData();
+  interp_config cfg;
+  
+  cfg = interp_default_config();
+  interp_config_set_shift(&cfg, 2);
+  interp_set_config(interp0, 0, &cfg);
 
+  cfg = interp_default_config();
+  interp_config_set_cross_input(&cfg, true);
+  interp_config_set_mask(&cfg, 0, 1);
+  interp_set_config(interp0, 1, &cfg);
+
+  for (int x = 0; x < width/16; ++x) {
+    interp0->accum[0] = ReadPixelData();
+
+    #pragma GCC unroll 16
     for (int i = 0; i < 16; ++i) {
-      *dest++ = g_palette[indices16 & 0x3];
-      indices16 >>= 2;
+      *dest++ = g_palette[interp0->pop[1]];
     }
   }
 }
@@ -270,7 +282,7 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   g_sys80_regs.current_y = y;
-  
+
   if (g_lines_enabled) {
     const int max_lines = 256;
     int lines_high = (g_sys80_regs.lines_page & DISPLAY_PAGE_MASK) * DISPLAY_PAGE_SIZE;
