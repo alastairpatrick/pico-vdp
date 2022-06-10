@@ -15,7 +15,7 @@
 #define NUM_BLIT_REGS 8
 #define BLITTER_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
 
-#define OPTIMIZE
+//#define OPTIMIZE
 
 #ifdef OPTIMIZE
 #define MCYCLE_TIME 16
@@ -172,10 +172,10 @@ static void STRIPED_SECTION MCycle(int cycles) {
     int fifo_end = g_sys80_regs.fifo_end;
     int fifo_and = (1 << g_sys80_regs.fifo_wrap) - 1;
 
-    if (Sys80FifoLevel() >= 4 && ((fifo_end + 1) & fifo_and) != fifo_begin) {
+    if (!IsSys80FifoEmpty() && ((fifo_end + 1) & fifo_and) != fifo_begin) {
       g_blit_dot_cycle += MCYCLE_TIME;
 
-      uint32_t data = PopSys80Fifo() | (PopSys80Fifo() << 8) | (PopSys80Fifo() << 16) | (PopSys80Fifo() << 24);
+      uint32_t data = PopSys80Fifo();
       WriteBlitterBank(fifo_end, data);
 
       g_sys80_regs.fifo_end = fifo_end = (fifo_end + 1) & fifo_and;

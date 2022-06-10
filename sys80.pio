@@ -93,8 +93,8 @@ PUBLIC entry:
 .DEFINE PUBLIC cs_pin 27
 
 write:
-  IN PINS, 8    ; no auto-push (because it could block)
-  PUSH NOBLOCK
+  IN PINS, 8                      ; no auto-push (because it could block)
+  PUSH IFFULL NOBLOCK             ; gather 32-bits before pushing
   
 PUBLIC entry:
 .WRAP_TARGET
@@ -151,7 +151,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     32,
     8,
     8,
-    -1,
+    32,
   };
 
   const static bool sm_auto_push[4] = {
@@ -161,11 +161,11 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     false,
   };
 
-  const static enum pio_fifo_join sm_fifo_join[4] = {
-    PIO_FIFO_JOIN_NONE,
-    PIO_FIFO_JOIN_NONE,
-    PIO_FIFO_JOIN_NONE,
-    PIO_FIFO_JOIN_RX,
+  const static bool sm_push_dir[4] = {
+    false,
+    false,
+    false,
+    true,
   };
 
   pio_sm_config c = pio_get_default_sm_config();
@@ -173,7 +173,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
   sm_config_set_wrap(&c, offset + sm_wrap_target[sm], offset + sm_wrap[sm]);
 
   sm_config_set_in_pins(&c, DATA_PINS);
-  sm_config_set_in_shift(&c, false, sm_auto_push[sm], sm_push_level[sm]);
+  sm_config_set_in_shift(&c, sm_push_dir[sm], sm_auto_push[sm], sm_push_level[sm]);
 
   sm_config_set_out_pins(&c, DATA_PINS, 8);
   sm_config_set_out_shift(&c, false, sm_auto_pull[sm], sm_pull_level[sm]);
@@ -185,9 +185,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
 
   sm_config_set_jmp_pin(&c, RD_PIN);
 
-  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 5);
-
-  sm_config_set_fifo_join(&c, sm_fifo_join[sm]);
+  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 3);
 
   pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
 
