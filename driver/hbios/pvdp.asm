@@ -108,12 +108,12 @@ _READY_LOOP:
         CP      $AA
         JR      NZ, _READY_LOOP
 
-#if _ENABLE_FIFO
+#IF _ENABLE_FIFO
         ; Initialize blitter FIFO
         LD      D, 8
         LD      C, _REG_FIFO_WRAP
         CALL    _SET_REG_D
-#endif
+#ENDIF
 
         CALL    PVDP_RESET
 
@@ -122,13 +122,13 @@ _READY_LOOP:
         LD      DE, PVDP_IDAT
         CALL    VDA_ADDENT
 
-#if TERMENABLE
+#IF TERMENABLE
         ; Initialize terminal emulation
         LD      C, A
         LD      DE, PVDP_FNTBL
         LD      HL, PVDP_IDAT
         CALL    TERM_ATTACH
-#endif
+#ENDIF
 
         POP     HL
         POP     DE
@@ -258,13 +258,13 @@ _LINE_LOOP:
         
         CALL    _BLIT_SYNC
 
-#if (_WIDTH == 80) | (_WIDTH == 64)
+#IF (_WIDTH == 80) | (_WIDTH == 64)
         ; HIRES4 mode
         LD      A, $72
-#else
+#ELSE
         ; LORES16 mode
         LD      A, $76
-#endif
+#ENDIF
         OUT     (_PORT_BLIT), A
         LD      A, $0F
         OUT     (_PORT_BLIT), A
@@ -335,39 +335,39 @@ _INIT_BLIT_REGS:
         LD      C, _BCMD_SET_DPITCH
         CALL    _BLIT_CMD_DE
 
-#if (_WIDTH == 80) | (_WIDTH == 64)
+#IF (_WIDTH == 80) | (_WIDTH == 64)
         ; Width is in nibbles so 8 pixels @ 2bpp = 4 nibbles
         ; COUNTS = $0804
         LD      DE, $0804
-#else
+#ELSE
         LD      DE, $0808
-#endif
+#ENDIF
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
-#if (_WIDTH == 80)
+#IF (_WIDTH == 80)
         ; CLIP = $0400
         LD      DE, $0400
-#endif
-#if (_WIDTH == 64)
+#ENDIF
+#IF (_WIDTH == 64)
         ; CLIP = $0400
         LD      DE, $0400
-#endif
-#if (_WIDTH == 42)
+#ENDIF
+#IF (_WIDTH == 42)
         ; CLIP = $0600
         LD      DE, $0600
-#endif
+#ENDIF
         ; 
         LD      C, _BCMD_SET_CLIP
         CALL    _BLIT_CMD_DE
 
-#if (_WIDTH == 80) | (_WIDTH == 64)
+#IF (_WIDTH == 80) | (_WIDTH == 64)
         ; UNPACK_8_16
         LD      DE, $0100
-#else
+#ELSE
         ; UNPACK_8_32
         LD      DE, $0200
-#endif
+#ENDIF
         LD      C, _BCMD_SET_FLAGS
         CALL    _BLIT_CMD_DE
 
@@ -443,22 +443,22 @@ _APPLY_CURSOR_LINE:
         RET
 
 _SET_CURSOR_LINE:
-#if _WIDTH == 42
+#IF _WIDTH == 42
         LD      A, $0F
         AND     D
         LD      E, A
         CALL    _SET_REG_E
-#endif
+#ENDIF
         DEC     C
-#if _WIDTH == 80
+#IF _WIDTH == 80
         LD      A, $3F
-#endif
-#if _WIDTH == 64
+#ENDIF
+#IF _WIDTH == 64
         LD      A, $FF
-#endif
-#if _WIDTH == 42
+#ENDIF
+#IF _WIDTH == 42
         LD      A, $FF
-#endif
+#ENDIF
         AND     D
         LD      E, A
         CALL    _SET_REG_E
@@ -490,23 +490,23 @@ _UPDATE_SPRITE:
         LD      C, _REG_SPRITE_Y
         CALL    _SET_REG_D
 
-#if (_WIDTH == 80) | (_WIDTH == 42)
+#IF (_WIDTH == 80) | (_WIDTH == 42)
         ; SPRITE_X = col*3+8 or SPRITE_X = col*6
         LD      A, E
         ADD     A, E
         ADD     A, E
-#if (_WIDTH == 42)
+#IF (_WIDTH == 42)
         SLA     A
-#else
+#ELSE
         ADD     A, 8
-#endif
+#ENDIF
         LD      D, A
-#else
+#ELSE
         ; SPRITE_X = col*4
         SLA     E
         SLA     E
         LD      D, E
-#endif
+#ENDIF
 
         LD      C, _REG_SPRITE_X
         CALL    _SET_REG_D
@@ -534,7 +534,7 @@ PVDP_SET_CHAR_COLOR:
         PUSH    BC
         PUSH    DE
 
-#if (_WIDTH == 80) | (_WIDTH == 64)
+#IF (_WIDTH == 80) | (_WIDTH == 64)
         ; Reduce to 2-bit intensities in form FfFfBbBb
         LD      A, E
         AND     $C0             ; mask Bb
@@ -555,13 +555,13 @@ PVDP_SET_CHAR_COLOR:
         OR      E               ; FfFf0000
         OR      D               ; FfFfBbBb
         LD      E, A
-#else
+#ELSE
         ; Swap nibbles of E
         RLC     E
         RLC     E
         RLC     E
         RLC     E
-#endif
+#ENDIF
 
         ; Store in COLORS
         LD      D, 0
@@ -631,22 +631,22 @@ _NO_CALC_DADDR_WRAP:
         SLA     H
         SLA     H
 
-#if (_WIDTH == 80) | (_WIDTH == 42)
+#IF (_WIDTH == 80) | (_WIDTH == 42)
         ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 6/2
         LD      A, L
         ADD     A, L
         ADD     A, L
-#if (_WIDTH == 42)
+#IF (_WIDTH == 42)
         SLA     A
-#else
+#ELSE
         ADD     A, 8
-#endif
+#ENDIF
         LD      L, A
-#else
+#ELSE
         ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 8/2
         SLA     L
         SLA     L
-#endif
+#ENDIF
 
         RET
 
@@ -825,15 +825,15 @@ _SCROLL_CLEAR:
         LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
-#if (_WIDTH == 80)
+#IF (_WIDTH == 80)
         LD      DE, $08F0
-#endif
-#if (_WIDTH == 64)
+#ENDIF
+#IF (_WIDTH == 64)
         LD      DE, $0800
-#endif
-#if (_WIDTH == 42)
+#ENDIF
+#IF (_WIDTH == 42)
         LD      DE, $08FC
-#endif
+#ENDIF
         LD      C, _BCMD_SET_COUNT
         CALL    _BLIT_CMD_DE
 
@@ -1340,12 +1340,12 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
 ; After the palette data is copied to video memory, it becomes the key buffer.
 _KEY_BUF:
 _PALETTE:
-#if (_WIDTH == 80) | (_WIDTH == 64)
+#IF (_WIDTH == 80) | (_WIDTH == 64)
                         .DB     %00000000
                         .DB     %10101101
                         .DB     %01010010
                         .DB     %11111111
-#else
+#ELSE
                         .DB     %00000000
                         .DB     %00000011
                         .DB     %00011000
@@ -1362,7 +1362,7 @@ _PALETTE:
                         .DB     %11010111
                         .DB     %11111011
                         .DB     %11111111
-#endif
+#ENDIF
 _PALETTE_END:
 
 PVDP_IDAT:
