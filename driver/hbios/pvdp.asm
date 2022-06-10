@@ -8,11 +8,13 @@
 
 ; Blitter RAM layout
 ; Word address          Description
-; $0000-$01FF           256 character bitmaps
+; $0000-$00FF           blitter FIFO
+; $0100-$02FF           256 character bitmaps
 
 ; Configuration
 TERMENABLE      	.SET	TRUE
 _WIDTH                  .EQU    42              ; 42, 64 or 80
+_ENABLE_FIFO            .EQU    1
 
 ; Not configuration
 _HEIGHT                 .EQU    24
@@ -23,6 +25,9 @@ _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
 _PORT_BLIT              .EQU    $B2
 
+_REG_FIFO_BEGIN         .EQU    $40
+_REG_FIFO_END           .EQU    $42
+_REG_FIFO_WRAP          .EQU    $44
 _REG_FONT_PG            .EQU    $21
 _REG_LEDS               .EQU    $25
 _REG_LINES_PG           .EQU    $20
@@ -40,6 +45,7 @@ _BCMD_DCLEAR            .EQU    $CA
 _BCMD_DDCOPY            .EQU    $A0
 _BCMD_DSTREAM           .EQU    $8B
 _BCMD_IMAGE             .EQU    $F1
+_BCMD_NOP               .EQU    $4F
 _BCMD_RECT              .EQU    $C2
 _BCMD_SET_COUNT         .EQU    $03
 _BCMD_SET_CLIP          .EQU    $01
@@ -103,6 +109,13 @@ _READY_LOOP:
         IN      A, (_PORT_RDAT)
         CP      $AA
         JR      NZ, _READY_LOOP
+
+#if _ENABLE_FIFO
+        ; Initialize blitter FIFO
+        LD      D, 4
+        LD      C, _REG_FIFO_WRAP
+        CALL    _SET_REG_D
+#endif
 
         CALL    PVDP_RESET
 
@@ -203,6 +216,7 @@ PVDP_RESET:
         
         CALL    PVDP_KEYBOARD_FLUSH
         CALL    _INIT_BLIT_REGS
+        CALL    _BLIT_FLUSH
 
         POP     HL
         POP     DE
@@ -298,7 +312,7 @@ _COPY_FONT:
 #ENDIF
 
         ; Copy font to blitter RAM.
-        LD      DE, $0000
+        LD      DE, $0100
         LD      BC, $_FONT_SIZE
         LD      A, _BCMD_BSTREAM
         CALL    _BLIT_COPY
@@ -361,6 +375,13 @@ _INIT_BLIT_REGS:
 
         POP     DE
         RET
+
+_BLIT_FLUSH:
+        LD      C, _BCMD_NOP
+        CALL    _BLIT_CMD
+        CALL    _BLIT_CMD
+        JP      _BLIT_CMD
+
 
 ; Exit
 ;  A: 0
@@ -564,6 +585,7 @@ PVDP_SET_CHAR_COLOR:
 PVDP_WRITE_CHAR:
         CALL    _WRITE_CHAR
         CALL    _UPDATE_SPRITE
+        CALL    _BLIT_FLUSH
         XOR     A
         RET
 
@@ -577,9 +599,9 @@ _WRITE_CHAR:
         LD      C, _BCMD_SET_DST_ADDR
         CALL    _BLIT_CMD_HL
 
-        ; LADDR = char * 2
+        ; LADDR = char * 2 + $100
         SLA     E
-        LD      D, 0
+        LD      D, 1
         LD      C, _BCMD_SET_SRC_ADDR
         CALL    _BLIT_CMD_DE
 
@@ -664,6 +686,7 @@ _FILL_TEST:
         JR      NZ, _FILL_LOOP
 
         CALL    _UPDATE_SPRITE
+        CALL    _BLIT_FLUSH
 
         POP     HL
         XOR     A
@@ -698,6 +721,7 @@ _COPY_NO_WRAP:
         DJNZ    _COPY_LOOP
 
         CALL    _UPDATE_SPRITE
+        CALL    _BLIT_FLUSH
 
         POP     DE
         POP     BC
@@ -764,6 +788,7 @@ _SCROLL_DONE:
 
         CALL    _INIT_LINES
         CALL    _INIT_BLIT_REGS
+        CALL    _BLIT_FLUSH
 
         POP     HL
         POP     DE

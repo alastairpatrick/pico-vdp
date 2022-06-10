@@ -34,6 +34,9 @@ typedef struct {
       uint8_t sprite_duty;          // $2E
       uint8_t sprite_rgb;           // $2F
       uint16_t sprite_bitmap[8];    // $30
+      uint16_t fifo_begin;          // $40
+      uint16_t fifo_end;            // $42
+      uint8_t fifo_wrap;            // $44
     };
     uint8_t rw_bytes[128];
   };
@@ -55,6 +58,10 @@ static_assert(sizeof(Sys80Registers) == 256);
 extern volatile Sys80Registers g_sys80_regs;
 
 void InitSys80();
+
+static inline int STRIPED_SECTION Sys80FifoLevel() {
+  return pio_sm_get_rx_fifo_level(SYS80_PIO, 3);
+}
 
 static inline bool STRIPED_SECTION IsSys80FifoEmpty() {
   return pio_sm_is_rx_fifo_empty(SYS80_PIO, 3);

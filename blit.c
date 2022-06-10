@@ -97,13 +97,15 @@ static DisplayBank* g_blit_display_bank;
 static uint16_t g_blit_regs[NUM_BLIT_REGS];
 
 static int g_last_dot_x;
-static uint64_t g_scan_dot_cycle, g_blit_dot_cycle;
+static int64_t g_scan_dot_cycle, g_blit_dot_cycle;
 
 static union {
   uint8_t words8[BLITTER_BANK_SIZE*4];
   uint16_t words16[BLITTER_BANK_SIZE*2];
   uint32_t words32[BLITTER_BANK_SIZE];
 } g_blit_bank;
+
+static Fifo64 g_cmd_fifo;
 
 static uint16_t g_unpack12[0x100];
 static uint16_t g_unpack24[0x100];
@@ -140,13 +142,21 @@ static STRIPED_SECTION int Fifo64Pop(Fifo64* fifo, int n) {
   return bits;
 }
 
+// 32-bit word offset as addr.
+static uint32_t STRIPED_SECTION ReadBlitterBank(unsigned addr) {
+  return g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)];
+}
+
+static void STRIPED_SECTION WriteBlitterBank(unsigned addr, uint32_t data) {
+  g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)] = data;
+}
+
 static void STRIPED_SECTION MCycle(int cycles) {
+  g_blit_dot_cycle += MCYCLE_TIME * cycles;
   assert(g_scan_dot_cycle - g_blit_dot_cycle < g_total_logical_width * 2);
 
   int dot_x;
   do {
-    g_blit_dot_cycle += MCYCLE_TIME * cycles;
-
     do {
       dot_x = GetDotX();
       int elapsed = dot_x - g_last_dot_x;
@@ -157,26 +167,47 @@ static void STRIPED_SECTION MCycle(int cycles) {
       g_last_dot_x = dot_x;
       g_scan_dot_cycle += elapsed;
     } while (g_blit_dot_cycle > g_scan_dot_cycle);
-  } while (!IsBlitClockEnabled(dot_x));
+
+    int fifo_begin = g_sys80_regs.fifo_begin;
+    int fifo_end = g_sys80_regs.fifo_end;
+    int fifo_and = (1 << g_sys80_regs.fifo_wrap) - 1;
+
+    if (Sys80FifoLevel() >= 4 && ((fifo_end + 1) & fifo_and) != fifo_begin) {
+      g_blit_dot_cycle += MCYCLE_TIME;
+
+      uint32_t data = PopSys80Fifo() | (PopSys80Fifo() << 8) | (PopSys80Fifo() << 16) | (PopSys80Fifo() << 24);
+      WriteBlitterBank(fifo_end, data);
+
+      g_sys80_regs.fifo_end = fifo_end = (fifo_end + 1) & fifo_and;
+
+      continue;
+    }
+
+    if (IsBlitClockEnabled(dot_x)) {
+      g_blit_dot_cycle += MCYCLE_TIME;
+      continue;
+    }
+    
+  } while (false);
 }
 
-static int STRIPED_SECTION PopCmdFifo8() {
-  while (IsSys80FifoEmpty()) {
+static int STRIPED_SECTION PopCmdFifo(int n) {
+  for (;;) {
+    if (g_cmd_fifo.size >= n) {
+      return Fifo64Pop(&g_cmd_fifo, n);
+    }
+    
+    int fifo_begin = g_sys80_regs.fifo_begin;
+    int fifo_end = g_sys80_regs.fifo_end;
+    if (fifo_end != fifo_begin) {
+      Fifo64Push(&g_cmd_fifo, ReadBlitterBank(fifo_begin), 32);
+
+      int fifo_and = (1 << g_sys80_regs.fifo_wrap) - 1;
+      g_sys80_regs.fifo_begin = fifo_begin = (fifo_begin + 1) & fifo_and;
+    }
+
     MCycle(1);
   }
-  return PopSys80Fifo();
-}
-
-static int STRIPED_SECTION PopCmdFifo16() {
-  int low = PopCmdFifo8();
-  int high = PopCmdFifo8();
-  return low | (high << 8);
-}
-
-static uint32_t STRIPED_SECTION PopCmdFifo32() {
-  int low = PopCmdFifo16();
-  int high = PopCmdFifo16();
-  return low | (high << 16);
 }
 
 static int STRIPED_SECTION GetRegister(int idx) {
@@ -185,15 +216,6 @@ static int STRIPED_SECTION GetRegister(int idx) {
 
 static void STRIPED_SECTION SetRegister(int idx, int data) {
   g_blit_regs[idx & (NUM_BLIT_REGS-1)] = data;
-}
-
-// 32-bit word offset as addr.
-static uint32_t STRIPED_SECTION ReadBlitterBank(unsigned addr) {
-  return g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)];
-}
-
-static void STRIPED_SECTION WriteBlitterBank(unsigned addr, uint32_t data) {
-  g_blit_bank.words32[addr & (BLITTER_BANK_SIZE-1)] = data;
 }
 
 // Packed variants all use byte offsets as addr.
@@ -276,7 +298,7 @@ uint32_t STRIPED_SECTION ReadZeroSourceData(int daddr, int* baddr_byte) {
 }
 
 uint32_t STRIPED_SECTION ReadStreamSourceData(int daddr, int* baddr_byte) {
-  return PopCmdFifo32();
+  return PopCmdFifo(32);
 }
 
 static ReadSourceDataFn STRIPED_SECTION PrepareReadSourceData(Opcode opcode) {
@@ -521,7 +543,7 @@ void STRIPED_SECTION BlitMain() {
   g_last_dot_x = GetDotX();
 
   for (;;) {
-    Opcode opcode = (Opcode) PopCmdFifo8();
+    Opcode opcode = (Opcode) PopCmdFifo(8);
     MCycle(1);
 
     switch (opcode) {
@@ -533,13 +555,15 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SET5:
     case OPCODE_SET6:
     case OPCODE_SET7:
-      SetRegister(opcode, PopCmdFifo16());
+      SetRegister(opcode, PopCmdFifo(16));
       break;
     case OPCODE_SWAP0:
     case OPCODE_SWAP1:
     case OPCODE_SWAP2:
     case OPCODE_SWAP3:
       DoSwap((SwapMode) (opcode & SWAP_MASK));
+      break;
+    case OPCODE_NOP:
       break;
     default:
       assert(opcode & OPCODE_BLIT_BASE);
