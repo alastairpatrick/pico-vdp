@@ -9,7 +9,7 @@
 ; /RD     <- JMP PIN
 
 
-; SM 0
+; PIO 1 SM 0
 ; 12 instructions
 ; Port RSEL (read/write)
 ; X holds the selected register index.
@@ -40,7 +40,7 @@ read:
 
 
 
-; SM 1
+; PIO 1 SM 1
 ; 7 instructions
 ; Port RDAT (read) accesses the register addressed by port RSEL.
 .PROGRAM sys80_read_rdat
@@ -64,7 +64,7 @@ write:
   .WRAP
 
 
-; SM 2
+; PIO 0 SM 2
 ; 5 instructions
 ; Port RDAT (write) accesses the register addressed by port RSEL.
 .PROGRAM sys80_write_rdat
@@ -84,7 +84,7 @@ PUBLIC entry:
   .WRAP
 
 
-; SM 3
+; PIO 1 SM 3
 ; 8 instructions
 ; Port FIFO (write) Streams data to blitter.
 ; Port FIFO (read) Returns whether blitter FIFO is ready to receive at least 4 bytes without overflow.
