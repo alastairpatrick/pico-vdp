@@ -47,11 +47,12 @@ void InitLED() {
 int main() {
   stdio_init_all();
   InitPerf();
-  InitSys80();
   InitLED();
   
   InitVideo(&g_timing1024_768);
   SetVideoResolution(1, 2);
+
+  InitSys80();
 
   multicore_launch_core1(ScanMain);
   BlitMain();

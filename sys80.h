@@ -7,8 +7,6 @@
 
 #define KEYBOARD_ROWS 11
 
-#define SYS80_PIO pio1
-
 enum {
   LED_CAPS_LOCK_MASK = 0x40,
   LED_NUM_LOCK_MASK = 0x20,
@@ -74,11 +72,11 @@ extern volatile Sys80Registers g_sys80_regs;
 void InitSys80();
 
 static inline bool STRIPED_SECTION IsSys80FifoEmpty() {
-  return pio_sm_is_rx_fifo_empty(SYS80_PIO, 3);
+  return pio_sm_is_rx_fifo_empty(pio1, 3);
 }
 
 static inline uint32_t STRIPED_SECTION PopSys80Fifo() {
-  return pio_sm_get(SYS80_PIO, 3);
+  return pio_sm_get(pio1, 3);
 }
 
 #endif  // SYS80_H

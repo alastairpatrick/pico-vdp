@@ -33,21 +33,21 @@ static void InitRSELProgram() {
   dma_cfg = DefaultChannelConfig(g_write_addr_channel);
   channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX0);
   channel_config_set_chain_to(&dma_cfg, g_read_addr_channel);
-  dma_channel_configure(g_write_addr_channel, &dma_cfg, &dma_hw->ch[g_write_register_channel].write_addr, &SYS80_PIO->rxf[0], 1, false);
+  dma_channel_configure(g_write_addr_channel, &dma_cfg, &dma_hw->ch[g_write_register_channel].write_addr, &pio1->rxf[0], 1, false);
 
   // This channel reads from the RX FIFO of SM0 and writes the READ_ADDR register of another DMA channel.
   dma_cfg = DefaultChannelConfig(g_read_addr_channel);
   channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX0);
   channel_config_set_chain_to(&dma_cfg, g_write_addr_channel);
-  dma_channel_configure(g_read_addr_channel, &dma_cfg, &dma_hw->ch[g_read_register_channel].read_addr, &SYS80_PIO->rxf[0], 1, true);
+  dma_channel_configure(g_read_addr_channel, &dma_cfg, &dma_hw->ch[g_read_register_channel].read_addr, &pio1->rxf[0], 1, true);
 
   // Load high 24-bits of g_registers into Y register to it can be combined with register index to give the address
   // of the register in internal SRAM.
-  SYS80_PIO->txf[0] = ((uint32_t) &g_sys80_regs) >> 8;
-  pio_sm_exec(SYS80_PIO, 0, pio_encode_pull(false, true));
-  pio_sm_exec(SYS80_PIO, 0, pio_encode_mov(pio_y, pio_osr));
+  pio1->txf[0] = ((uint32_t) &g_sys80_regs) >> 8;
+  pio_sm_exec(pio1, 0, pio_encode_pull(false, true));
+  pio_sm_exec(pio1, 0, pio_encode_mov(pio_y, pio_osr));
 
-  sys80_program_init(SYS80_PIO, 0, pio_add_program(SYS80_PIO, &sys80_rsel_program));
+  sys80_program_init(pio1, 0, pio_add_program(pio1, &sys80_rsel_program));
 }
 
 static void InitReadRDATProgram() {
@@ -58,16 +58,16 @@ static void InitReadRDATProgram() {
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
   channel_config_set_chain_to(&dma_cfg, g_await_read_channel);
   dma_cfg.ctrl |= DMA_CH1_CTRL_TRIG_HIGH_PRIORITY_BITS;
-  dma_channel_configure(g_read_register_channel, &dma_cfg, &SYS80_PIO->txf[1], &g_sys80_regs, 1, false);
+  dma_channel_configure(g_read_register_channel, &dma_cfg, &pio1->txf[1], &g_sys80_regs, 1, false);
 
   // This channel reads a dummy value from the RX FIFO of SM1 then chains to another channel.
   dma_cfg = DefaultChannelConfig(g_await_read_channel);
   channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX1);
   channel_config_set_chain_to(&dma_cfg, g_read_register_channel);
   dma_cfg.ctrl |= DMA_CH1_CTRL_TRIG_HIGH_PRIORITY_BITS;
-  dma_channel_configure(g_await_read_channel, &dma_cfg, &g_dummy, &SYS80_PIO->rxf[1], 1, true);
+  dma_channel_configure(g_await_read_channel, &dma_cfg, &g_dummy, &pio1->rxf[1], 1, true);
 
-  sys80_program_init(SYS80_PIO, 1, pio_add_program(SYS80_PIO, &sys80_read_rdat_program));
+  sys80_program_init(pio1, 1, pio_add_program(pio1, &sys80_read_rdat_program));
 }
 
 static void InitWriteRDATProgram() {
@@ -75,22 +75,22 @@ static void InitWriteRDATProgram() {
 
   // This channel reads a register value from the RX FIFO of SM2 and writes it to internal SRAM.
   dma_cfg = DefaultChannelConfig(g_write_register_channel);
-  channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX2);
+  channel_config_set_dreq(&dma_cfg, DREQ_PIO0_RX2);
   channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
   channel_config_set_chain_to(&dma_cfg, g_await_write_channel);
-  dma_channel_configure(g_write_register_channel, &dma_cfg, &g_sys80_regs, &SYS80_PIO->rxf[2], 1, false);
+  dma_channel_configure(g_write_register_channel, &dma_cfg, &g_sys80_regs, &pio0->rxf[2], 1, false);
 
   // This channel reads a dummy value from the RX FIFO of SM2 then chains to another channel.
   dma_cfg = DefaultChannelConfig(g_await_write_channel);
-  channel_config_set_dreq(&dma_cfg, DREQ_PIO1_RX2);
+  channel_config_set_dreq(&dma_cfg, DREQ_PIO0_RX2);
   channel_config_set_chain_to(&dma_cfg, g_write_register_channel);
-  dma_channel_configure(g_await_write_channel, &dma_cfg, &g_dummy, &SYS80_PIO->rxf[2], 1, true);
+  dma_channel_configure(g_await_write_channel, &dma_cfg, &g_dummy, &pio0->rxf[2], 1, true);
 
-  sys80_program_init(SYS80_PIO, 2, pio_add_program(SYS80_PIO, &sys80_write_rdat_program));
+  sys80_program_init(pio0, 2, pio_add_program(pio0, &sys80_write_rdat_program));
 }
 
 static void InitFifoProgram() {
-  sys80_program_init(SYS80_PIO, 3, pio_add_program(SYS80_PIO, &sys80_fifo_program));
+  sys80_program_init(pio1, 3, pio_add_program(pio1, &sys80_fifo_program));
 }
 
 void InitSys80() {
@@ -101,12 +101,13 @@ void InitSys80() {
   g_await_write_channel = dma_claim_unused_channel(true);
   g_write_register_channel = dma_claim_unused_channel(true);
 
-  pio_gpio_init(SYS80_PIO, CS0_PIN);
-  pio_gpio_init(SYS80_PIO, CS1_PIN);
-  pio_gpio_init(SYS80_PIO, CS2_PIN);
+  gpio_set_input_enabled(CS0_PIN, true);
+  gpio_set_input_enabled(CS1_PIN, true);
+  gpio_set_input_enabled(CS2_PIN, true);
+  gpio_set_input_enabled(RD_PIN, true);
 
   for (int i = 0; i < 8; ++i) {
-     pio_gpio_init(SYS80_PIO, DATA_PINS + i);
+    pio_gpio_init(pio1, DATA_PINS + i);
   }
 
   InitRSELProgram();
