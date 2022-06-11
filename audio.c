@@ -1,9 +1,8 @@
+#include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
-
-#include "third_party/libayemu/ayemu.h"
 
 #include "audio.h"
 
@@ -11,15 +10,13 @@
 #include "section.h"
 #include "sys80.h"
 
-#define SYS_FREQ 130000000
-#define TIMER_NUMERATOR 1
-#define TIMER_DENOMINATOR 13000
-#define SAMPLE_FREQ (SYS_FREQ * TIMER_NUMERATOR / TIMER_DENOMINATOR)
+#define AY_FREQ 1773400
+#define CYCLES_PER_SAMPLE 40
+#define SAMPLE_FREQ (AY_FREQ / CYCLES_PER_SAMPLE)
 
-#define BUFFER_SIZE_BITS 5
+
+#define BUFFER_SIZE_BITS 8
 #define BUFFER_SIZE (1 << BUFFER_SIZE_BITS)
-
-static ayemu_ay_t g_ay;
 
 static int g_pwm_slice, g_pwm_channel;
 static int g_dma_channels[2];
@@ -27,21 +24,11 @@ static int g_dma_timer;
 
 static uint16_t g_buffers[2][BUFFER_SIZE] __attribute__ ((aligned(BUFFER_SIZE)));
 
-void STRIPED_SECTION GenerateAudio(uint16_t* buffer) {
-  char regs[14];
-  for (int i = i; i < 14; ++i) {
-    regs[i] = g_sys80_regs.ay[i];
-  }
-
-  ayemu_set_regs(&g_ay, regs);
-  ayemu_gen_sound(&g_ay, buffer, sizeof(g_buffers[0]));
-}
-
 void STRIPED_SECTION BufferISR() {
   for (int i = 0; i < 2; ++i) {
     if (dma_irqn_get_channel_status(DMA_IRQ_1, g_dma_channels[i])) {
       dma_irqn_acknowledge_channel(DMA_IRQ_1, g_dma_channels[i]);
-      GenerateAudio(g_buffers[i]);
+      GenerateAY(g_buffers[i], BUFFER_SIZE, CYCLES_PER_SAMPLE);
     }
   }
 }
@@ -53,12 +40,14 @@ static void InitPWM() {
   g_pwm_channel = pwm_gpio_to_channel(PWM_PIN);
 
   pwm_config cfg = pwm_get_default_config();
+  pwm_config_set_wrap(&cfg, 0xFF);
   pwm_init(g_pwm_slice, &cfg, true);
 }
 
 static void InitDMA() {
   g_dma_timer = dma_claim_unused_timer(true);
-  dma_timer_set_fraction(g_dma_timer, TIMER_NUMERATOR, TIMER_DENOMINATOR);
+  int timer_denominator = clock_get_hz(clk_sys) / SAMPLE_FREQ;
+  dma_timer_set_fraction(g_dma_timer, 1, timer_denominator);
 
   // 2 ping ponging DMA channels.
   for (int i = 0; i < 2; ++i) {
@@ -84,13 +73,7 @@ static void InitDMA() {
 }
 
 void InitAudio() {
-  ayemu_init(&g_ay);
-  ayemu_set_sound_format(&g_ay, SAMPLE_FREQ, 1, 8);
-
-  for (int i = 0; i < 2; ++i) {
-    GenerateAudio(g_buffers[i]);
-  }
-
+  InitAY();
   InitPWM();
   InitDMA();
 }

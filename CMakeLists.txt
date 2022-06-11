@@ -11,6 +11,7 @@ pico_sdk_init()
 
 add_executable(pico-vdp
   audio.c
+  ay.c
   blit.c
   cdc.c
   hid.c

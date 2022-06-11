@@ -30,12 +30,12 @@ static void gen_sound (int tonea, int toneb, int tonec, int noise, int control, 
   regs[5] = tonec >> 8;
   regs[6] = noise;
   regs[7] = (~control) & 0x3f; 	/* invert bits 0-5 */
-  regs[8] = vola; 		/* included bit 4 */
-  regs[9] = volb;
-  regs[10] = volc;
-  regs[11] = envfreq & 0xff;
-  regs[12] = envfreq >> 8;
-  regs[13] = envstyle;
+  regs[10] = vola; 		/* included bit 4 */
+  regs[11] = volb;
+  regs[12] = volc;
+  regs[13] = envfreq & 0xff;
+  regs[14] = envfreq >> 8;
+  regs[15] = envstyle;
 }
 
 
@@ -130,8 +130,9 @@ testcases [] = {
 void TestAudio(int test)
 { 
   test %= count_of(testcases);
-  
-  printf ("Test %d: %s\n", test, testcases[test].name);
+  const char* name = testcases[test].name;
+
+  printf ("Test %d: %s\n", test, name);
   gen_sound (testcases[test].tonea, testcases[test].toneb, 
   testcases[test].tonec, testcases[test].noise,
   testcases[test].control, testcases[test].vola,
