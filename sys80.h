@@ -58,8 +58,6 @@ typedef struct {
       uint8_t pad3[31];
 
       // Blitter range $Cx
-      uint16_t fifo_begin;          // $C0
-      uint16_t fifo_end;            // $C2
     };
     uint8_t ro_bytes[128];
   };

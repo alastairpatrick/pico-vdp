@@ -106,6 +106,7 @@ static union {
 } g_blit_bank;
 
 static Fifo64 g_cmd_fifo;
+static int g_fifo_begin, g_fifo_end;
 
 static uint16_t g_unpack12[0x100];
 static uint16_t g_unpack24[0x100];
@@ -168,17 +169,15 @@ static void STRIPED_SECTION MCycle(int cycles) {
       g_scan_dot_cycle += elapsed;
     } while (g_blit_dot_cycle > g_scan_dot_cycle);
 
-    int fifo_begin = g_sys80_regs.fifo_begin;
-    int fifo_end = g_sys80_regs.fifo_end;
     int fifo_and = (1 << g_sys80_regs.fifo_wrap) - 1;
 
-    if (!IsSys80FifoEmpty() && ((fifo_end + 1) & fifo_and) != fifo_begin) {
+    if (!IsSys80FifoEmpty() && ((g_fifo_end + 1) & fifo_and) != g_fifo_begin) {
       g_blit_dot_cycle += MCYCLE_TIME;
 
       uint32_t data = PopSys80Fifo();
-      WriteBlitterBank(fifo_end, data);
+      WriteBlitterBank(g_fifo_end, data);
 
-      g_sys80_regs.fifo_end = fifo_end = (fifo_end + 1) & fifo_and;
+      g_fifo_end = (g_fifo_end + 1) & fifo_and;
 
       continue;
     }
@@ -197,13 +196,11 @@ static int STRIPED_SECTION PopCmdFifo(int n) {
       return Fifo64Pop(&g_cmd_fifo, n);
     }
     
-    int fifo_begin = g_sys80_regs.fifo_begin;
-    int fifo_end = g_sys80_regs.fifo_end;
-    if (fifo_end != fifo_begin) {
-      Fifo64Push(&g_cmd_fifo, ReadBlitterBank(fifo_begin), 32);
+    if (g_fifo_end != g_fifo_begin) {
+      Fifo64Push(&g_cmd_fifo, ReadBlitterBank(g_fifo_begin), 32);
 
       int fifo_and = (1 << g_sys80_regs.fifo_wrap) - 1;
-      g_sys80_regs.fifo_begin = fifo_begin = (fifo_begin + 1) & fifo_and;
+      g_fifo_begin = (g_fifo_begin + 1) & fifo_and;
     } else if (!IsSys80FifoEmpty()) {
       // This path is needed used the external FIFO is disabled, i.e. fifo_and == 0.
       uint32_t data = PopSys80Fifo();
