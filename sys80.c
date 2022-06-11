@@ -26,7 +26,7 @@ static dma_channel_config DefaultChannelConfig(uint channel) {
   return dma_cfg;
 }
 
-static void InitSM0() {
+static void InitRSELProgram() {
   dma_channel_config dma_cfg;
 
   // This channel reads from the RX FIFO of SM0 and writes the WRITE_ADDR register of another DMA channel.
@@ -50,7 +50,7 @@ static void InitSM0() {
   sys80_program_init(SYS80_PIO, 0, pio_add_program(SYS80_PIO, &sys80_rsel_program));
 }
 
-static void InitSM1() {
+static void InitReadRDATProgram() {
   dma_channel_config dma_cfg;
 
   // This channel reads a register value from internal SRAM and writes if the the TX FIFO of SM1.
@@ -70,7 +70,7 @@ static void InitSM1() {
   sys80_program_init(SYS80_PIO, 1, pio_add_program(SYS80_PIO, &sys80_read_rdat_program));
 }
 
-static void InitSM2() {
+static void InitWriteRDATProgram() {
   dma_channel_config dma_cfg;
 
   // This channel reads a register value from the RX FIFO of SM2 and writes it to internal SRAM.
@@ -89,7 +89,7 @@ static void InitSM2() {
   sys80_program_init(SYS80_PIO, 2, pio_add_program(SYS80_PIO, &sys80_write_rdat_program));
 }
 
-static void InitSM3() {
+static void InitFifoProgram() {
   sys80_program_init(SYS80_PIO, 3, pio_add_program(SYS80_PIO, &sys80_fifo_program));
 }
 
@@ -109,8 +109,8 @@ void InitSys80() {
      pio_gpio_init(SYS80_PIO, DATA_PINS + i);
   }
 
-  InitSM0();
-  InitSM1();
-  InitSM2();
-  InitSM3();
+  InitRSELProgram();
+  InitReadRDATProgram();
+  InitWriteRDATProgram();
+  InitFifoProgram();
 }
