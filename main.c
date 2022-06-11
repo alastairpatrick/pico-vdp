@@ -6,6 +6,7 @@
 #include "hardware/structs/syscfg.h"
 #include "tusb.h"
 
+#include "audio.h"
 #include "hid.h"
 #include "blit.h"
 #include "perf.h"
@@ -20,12 +21,21 @@ void ScanMain() {
   InitPerf();
   tusb_init();
 
+#if PICOVDP_ENABLE_AUDIO
+  InitAudio();
+#endif
+
   InitVideoInterrupts();
   StartVideo();  
 
   for (;;) {
     UpdateKeyboardLEDs();
     tuh_task();
+
+#if PICOVDP_ENABLE_AUDIO
+    void TestAudio(int test);
+    TestAudio(time_us_32() % 1000);
+#endif
   }
 }
 

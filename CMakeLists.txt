@@ -22,10 +22,12 @@ add_executable(pico-vdp
   video_dma.c
 
   third_party/libayemu/ay8912.c
+  third_party/libayemu/test.c
 )
 
 target_compile_definitions(pico-vdp PRIVATE
   PICOVDP_OVERCLOCK=0
+  PICOVDP_ENABLE_AUDIO=0
 )
 
 # Make sure TinyUSB can find tusb_config.h
