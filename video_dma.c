@@ -8,12 +8,12 @@
 #include "hardware/irq.h"
 #include "hardware/pio.h"
 #include "hardware/pll.h"
+#include "hardware/vreg.h"
 
 #include "video_dma.h"
 
-#include "pins.h"
+#include "common.h"
 #include "scan_out.h"
-#include "section.h"
 
 #include "video.pio.h"
 
@@ -31,26 +31,27 @@ typedef struct {
   uint32_t* read_addr;
 } DMAControlBlock;
 
+                                          // Not overclocked                                                Overclocked
 const VideoTiming g_timing640_480 = {
-  1512 * MHZ, 6, 2,  // 1512MHZ / 6 / 2 = 126MHz
-  640,               // 126MHZ / (640/256) = 50.4MHZ
-                     // 50.4MHZ / 2 cycles/pixel = 25.2MHZ =~ 25.175MHz +- 0.5%
+  1512 * MHZ, OVERCLOCK_SELECT(6, 4), 2,  // 1512MHZ / 6 / 2 = 126MHz                                       1512MHZ / 4 / 2 = 189MHz
+  OVERCLOCK_SELECT(640, 960),             // 126MHZ / (640/256) = 50.4MHZ                                   189MHz / (960/256) = 50.4MHZ
+                                          // 50.4MHZ / 2 cycles/pixel = 25.2MHZ =~ 25.175MHz +- 0.5%
   { 640, 16, 96, 48 },
   { 480, 10, 2, 33 },
 };
 
 const VideoTiming g_timing800_600 = {
-  1440 * MHZ, 6, 2,  // 1440MHZ / 6 / 2 = 120MHz
-  384,               // 120MHZ / (384/256) = 80MHZ
-                     // 80MHZ / 2 cycles/pixel = 40MHZ
+  1440 * MHZ, OVERCLOCK_SELECT(6, 4), 2,  // 1440MHZ / 6 / 2 = 120MHz                                       1440MHZ / 4 / 2 = 180MHZ
+  OVERCLOCK_SELECT(384, 576),             // 120MHZ / (384/256) = 80MHZ                                     180MHZ / (576/256) = 80MHZ
+                                          // 80MHZ / 2 cycles/pixel = 40MHZ
   { 800, 40, 128, 88 },
   { 600, 1, 4, 23 },
 };
 
 const VideoTiming g_timing1024_768 = {
-  1560 * MHZ, 6, 2,  // 1560MHZ / 6 / 2 = 130MHz
-  256,               // 130MHZ / (256/256) = 130MHZ
-                     // 130MHz / 2 cycles/pixel = 65MHZ
+  1560 * MHZ, OVERCLOCK_SELECT(6, 4), 2,  // 1560MHZ / 6 / 2 = 130MHz                                       1560MHZ / 4 / 2 = 195MHZ
+  OVERCLOCK_SELECT(256, 384),             // 130MHZ / (256/256) = 130MHZ                                    195MHZ / (384/256) = 130MHZ
+                                          // 130MHz / 2 cycles/pixel = 65MHZ
   { 1024, 24, 136, 160 },
   { 768, 3, 6, 29 },
 };
@@ -250,6 +251,11 @@ static void STRIPED_SECTION LineISR() {
 
 void InitVideo(const VideoTiming* timing) {
   g_timing = *timing;
+
+#if PICOVDP_OVERCLOCK
+  vreg_set_voltage(VREG_VOLTAGE_1_15);
+#endif
+
   set_sys_clock_pll(timing->vco_freq, timing->vco_div1, timing->vco_div2);
 
   uint offset = pio_add_program(PIO, &video_program);

@@ -24,6 +24,10 @@ add_executable(pico-vdp
   third_party/libayemu/ay8912.c
 )
 
+target_compile_definitions(pico-vdp PRIVATE
+  PICOVDP_OVERCLOCK=0
+)
+
 # Make sure TinyUSB can find tusb_config.h
 target_include_directories(pico-vdp PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 
