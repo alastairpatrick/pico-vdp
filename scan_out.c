@@ -204,7 +204,7 @@ void SCAN_OUT_INNER_SECTION ScanOutSprite(uint8_t* dest, int width, int y) {
   int sprite_x = g_sys80_regs.sprite_x * 2;
   int sprite_rgb = g_sys80_regs.sprite_rgb;
 
-  int sprite_bits = g_sys80_regs.sprite_bitmap[y];
+  int sprite_bits = g_sys80_regs.sprite_bitmap[y*2] | (g_sys80_regs.sprite_bitmap[y*2+1] << 8);
 
   #pragma GCC unroll 4
   for (int x = 0; x < 16; ++x) {

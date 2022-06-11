@@ -35,7 +35,7 @@ typedef struct {
       uint8_t sprite_period;        // $2D
       uint8_t sprite_duty;          // $2E
       uint8_t sprite_rgb;           // $2F
-      uint16_t sprite_bitmap[8];    // $30
+      uint8_t sprite_bitmap[16];    // $30
 
       // Blitter range $4x
       uint8_t fifo_wrap;            // $40
