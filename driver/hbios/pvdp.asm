@@ -11,6 +11,8 @@
 ; $0000-$00FF           blitter FIFO
 ; $0100-$02FF           256 character bitmaps
 
+#define USEFONT6X8
+
 ; Configuration
 TERMENABLE      	.SET	TRUE
 _WIDTH                  .EQU    42              ; 42, 64 or 80
@@ -87,7 +89,7 @@ PVDP_INIT:
         PUSH    BC
         PUSH    DE
         PUSH    HL
-        
+
         ; No idea what this does
         LD	IY, PVDP_IDAT
 
@@ -375,10 +377,15 @@ _INIT_BLIT_REGS:
         RET
 
 _BLIT_FLUSH:
+        PUSH    BC
+
         LD      C, _BCMD_NOP
         CALL    _BLIT_CMD
         CALL    _BLIT_CMD
-        JP      _BLIT_CMD
+        CALL    _BLIT_CMD
+
+        POP     BC
+        RET
 
 
 ; Exit
@@ -723,6 +730,7 @@ _COPY_NO_WRAP:
 
         POP     DE
         POP     BC
+        XOR     A
         RET
 
 _COPY_1_CHAR:
@@ -746,7 +754,6 @@ _COPY_1_CHAR:
         POP     HL
         POP     DE
         POP     BC
-        XOR     A
         RET
 
 
@@ -872,6 +879,7 @@ PVDP_KEYBOARD_STATUS:
 
         POP     DE
         JP      Z, CIO_IDLE
+        RET
 
 
 ; Exit:
@@ -1132,14 +1140,17 @@ _RETURN_ASCII:
 
 
 _MSX_CODE_TO_AT:
+        PUSH    DE
         PUSH    HL
 
+        ; TODO: this doesn't work!
         LD      HL, _AT_CODES
         LD      D, 0
         ADD     HL, DE
         LD      A, (HL)
 
         POP     HL
+        POP     DE
         RET
 
 
