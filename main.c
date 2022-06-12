@@ -33,8 +33,8 @@ void ScanMain() {
     tuh_task();
 
 #if PICOVDP_ENABLE_AUDIO
-    void TestAudio(int test);
-    TestAudio(time_us_64() / 1000000);
+    //void TestAudio(int test);
+    //TestAudio(time_us_64() / 1000000);
 #endif
   }
 }

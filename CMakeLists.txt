@@ -28,7 +28,7 @@ add_executable(pico-vdp
 
 target_compile_definitions(pico-vdp PRIVATE
   PICOVDP_OVERCLOCK=0
-  PICOVDP_ENABLE_AUDIO=0
+  PICOVDP_ENABLE_AUDIO=1
 )
 
 # Make sure TinyUSB can find tusb_config.h

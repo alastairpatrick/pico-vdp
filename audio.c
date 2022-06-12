@@ -22,7 +22,7 @@ static int g_pwm_slice, g_pwm_channel;
 static int g_dma_channels[2];
 static int g_dma_timer;
 
-static uint16_t g_buffers[2][BUFFER_SIZE] __attribute__ ((aligned(BUFFER_SIZE)));
+static uint16_t g_buffers[2][BUFFER_SIZE] __attribute__ ((aligned(BUFFER_SIZE*2)));
 
 void STRIPED_SECTION BufferISR() {
   for (int i = 0; i < 2; ++i) {
