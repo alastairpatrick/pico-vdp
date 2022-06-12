@@ -14,6 +14,7 @@
 ; Configuration
 TERMENABLE      	.SET	TRUE
 _WIDTH                  .EQU    42              ; 42, 64 or 80
+_KEY_BUF_SIZE           .EQU    16
 _ENABLE_FIFO            .EQU    1
 
 ; Not configuration
@@ -55,7 +56,6 @@ _BCMD_SET_FLAGS         .EQU    $05
 _BCMD_SET_LADDR_DST     .EQU    $07
 _BCMD_SET_LADDR_SRC     .EQU    $02
 
-_KEY_BUF_SIZE           .EQU    16
 _FONT_SIZE              .EQU    $800
 
 PVDP_FNTBL:
@@ -1295,6 +1295,7 @@ _KEY_BUF_BEGIN:         .DB     0
 _KEY_BUF_END:           .DB     0
 _MODIFIER_KEYS:         .DB     0
 _LAST_KEY_STATE:        .FILL   11, 0
+_KEY_BUF:               .FILL   _KEY_BUF_SIZE, 0
 
 _POS                    .DW     0
 _SCROLL                 .DB     0
@@ -1337,8 +1338,6 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
                         .DB     $7C, $79, $4A, $70, $69, $72, $7A, $6B          ; row 9
                         .DB     $73, $74, $6C, $75, $7D, $7B, $41, $71          ; row 10
 
-; After the palette data is copied to video memory, it becomes the key buffer.
-_KEY_BUF:
 _PALETTE:
 #IF (_WIDTH == 80) | (_WIDTH == 64)
                         .DB     %00000000
