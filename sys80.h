@@ -18,52 +18,52 @@ typedef struct {
   union {
     struct {
       // Audio / PIO range $0x, $1x
-      uint8_t ay[16];
-      uint8_t pad4[15];
-      uint8_t leds;                 // $1F
+      uint16_t ay[16];
+      uint16_t pad4[15];
+      uint16_t leds;                 // $1F
 
       // Video generator range $2x, $3x
-      uint8_t lines_page;           // $20
-      uint8_t font_page;            // $21
-      uint8_t border_rgb;           // $22
-      uint8_t border_left: 4;       // $23
-      uint8_t border_right: 4;
-      uint8_t start_line;           // $24
-      uint8_t pad[6];
-      uint8_t sprite_x;             // $2B
-      uint8_t sprite_y;             // $2C
-      uint8_t sprite_period;        // $2D
-      uint8_t sprite_duty;          // $2E
-      uint8_t sprite_rgb;           // $2F
-      uint8_t sprite_bitmap[16];    // $30
+      uint16_t lines_page;           // $20
+      uint16_t font_page;            // $21
+      uint16_t border_rgb;           // $22
+      uint16_t border_left: 4;       // $23
+      uint16_t border_right: 4;
+      uint16_t start_line;           // $24
+      uint16_t pad[6];
+      uint16_t sprite_x;             // $2B
+      uint16_t sprite_y;             // $2C
+      uint16_t sprite_period;        // $2D
+      uint16_t sprite_duty;          // $2E
+      uint16_t sprite_rgb;           // $2F
+      uint16_t sprite_bitmap[16];    // $30
 
       // Blitter range $4x
-      uint8_t fifo_wrap;            // $40
+      uint16_t fifo_wrap;            // $40
     };
-    uint8_t rw_bytes[128];
+    uint16_t rw_bytes[128];
   };
 
   // Read-only registers
   union {
     struct {
       // Audio / PIO range $8x, $9x
-      uint8_t kbd_rows[KEYBOARD_ROWS];  // $80
-      uint8_t kbd_dummy[16-KEYBOARD_ROWS];
-      uint8_t mouse_x, mouse_y;     // $90, $91
-      uint8_t mouse_buttons;        // $92
-      uint8_t pad2[14];
+      uint16_t kbd_rows[KEYBOARD_ROWS];  // $80
+      uint16_t kbd_dummy[16-KEYBOARD_ROWS];
+      uint16_t mouse_x, mouse_y;     // $90, $91
+      uint16_t mouse_buttons;        // $92
+      uint16_t pad2[14];
 
       // Video generator range $Ax, $Bx
-      uint8_t current_y;            // $A0
-      uint8_t pad3[31];
+      uint16_t current_y;            // $A0
+      uint16_t pad3[31];
 
       // Blitter range $Cx
     };
-    uint8_t ro_bytes[128];
+    uint16_t ro_bytes[128];
   };
 } Sys80Registers;
 
-static_assert(sizeof(Sys80Registers) == 256);
+static_assert(sizeof(Sys80Registers) == 512);
 
 extern volatile Sys80Registers g_sys80_regs;
 

@@ -7,7 +7,7 @@
 
 #include "sys80.pio.h"
 
-volatile Sys80Registers DMA_SECTION g_sys80_regs __attribute__ ((aligned(256)));                    // Read/written via port #1
+volatile Sys80Registers DMA_SECTION g_sys80_regs __attribute__ ((aligned(512)));                    // Read/written via port #1
 static DMA_SECTION uint32_t g_dummy;
 
 static uint g_read_addr_channel;
@@ -41,9 +41,9 @@ static void InitRSELProgram() {
   channel_config_set_chain_to(&dma_cfg, g_write_addr_channel);
   dma_channel_configure(g_read_addr_channel, &dma_cfg, &dma_hw->ch[g_read_register_channel].read_addr, &pio1->rxf[0], 1, true);
 
-  // Load high 24-bits of g_registers into Y register to it can be combined with register index to give the address
+  // Load high 23-bits of g_registers into Y register to it can be combined with register index to give the address
   // of the register in internal SRAM.
-  pio1->txf[0] = ((uint32_t) &g_sys80_regs) >> 8;
+  pio1->txf[0] = ((uint32_t) &g_sys80_regs) >> 9;
   pio_sm_exec(pio1, 0, pio_encode_pull(false, true));
   pio_sm_exec(pio1, 0, pio_encode_mov(pio_y, pio_osr));
 
@@ -76,7 +76,7 @@ static void InitWriteRDATProgram() {
   // This channel reads a register value from the RX FIFO of SM2 and writes it to internal SRAM.
   dma_cfg = DefaultChannelConfig(g_write_register_channel);
   channel_config_set_dreq(&dma_cfg, DREQ_PIO0_RX2);
-  channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_8);
+  channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16);
   channel_config_set_chain_to(&dma_cfg, g_await_write_channel);
   dma_channel_configure(g_write_register_channel, &dma_cfg, &g_sys80_regs, &pio0->rxf[2], 1, false);
 

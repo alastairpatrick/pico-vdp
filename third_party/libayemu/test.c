@@ -19,7 +19,7 @@
 static void gen_sound (int tonea, int toneb, int tonec, int noise, int control, int vola, int volb, int volc, int envfreq, int envstyle)
 {
   int n, len;
-  volatile uint8_t* regs = g_sys80_regs.ay;
+  volatile uint16_t* regs = g_sys80_regs.ay;
 
   /* setup regs */
   regs[0] = tonea & 0xff;

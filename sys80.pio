@@ -10,21 +10,25 @@
 
 
 ; PIO 1 SM 0
-; 12 instructions
+; 14 instructions
 ; Port RSEL (read/write)
 ; X holds the selected register index.
-; Y holds the most significant 24 bits of the READ_ADDR and WRITE_ADDR DMA channel registers modified on write.
+; Y holds the most significant 23 bits of the READ_ADDR and WRITE_ADDR DMA channel registers modified on write.
+; Memory addresses are for 16-bit words so CPU can detect register changes by watching for high 8-bits
+; being zero-ed by DMA controller on write.
 .PROGRAM sys80_rsel
 .SIDE_SET 3 OPT PINDIRS
 .DEFINE PUBLIC cs_pin 26
 
 write:
   MOV X, PINS
-  IN Y, 24
-  IN X, 8                           ; auto-push to READ_ADDR
-  IN Y, 24
-  IN NULL, 1                        ; WRITE_ADDR has bit 7 forced zero so high registers are read-only
-  IN X, 7                           ; auto-push to WRITE_ADDR
+  IN Y, 23
+  IN X, 8   
+  IN NULL, 1                        ; auto-push to READ_ADDR
+  IN Y, 23
+  IN NULL, 1                        ; WRITE_ADDR has bit 8 forced zero so high registers are read-only
+  IN X, 7
+  IN NULL, 1                        ; auto-push to WRITE_ADDR
 
 PUBLIC entry:  
 .WRAP_TARGET
