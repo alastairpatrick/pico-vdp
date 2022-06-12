@@ -18,7 +18,10 @@ typedef struct {
   union {
     struct {
       // Audio / PIO range $0x, $1x
-      uint16_t ay[16];
+      struct {
+        uint8_t value;
+        uint8_t track;
+      } ay[16];
       uint16_t pad4[15];
       uint16_t leds;                 // $1F
 

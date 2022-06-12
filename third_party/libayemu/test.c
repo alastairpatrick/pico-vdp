@@ -16,26 +16,31 @@
 #define NOISE_C   32
 
 
+static int g_current_test = -1;
+
 static void gen_sound (int tonea, int toneb, int tonec, int noise, int control, int vola, int volb, int volc, int envfreq, int envstyle)
 {
   int n, len;
-  volatile uint16_t* regs = g_sys80_regs.ay;
 
   /* setup regs */
-  regs[0] = tonea & 0xff;
-  regs[1] = tonea >> 8;
-  regs[2] = toneb & 0xff;
-  regs[3] = toneb >> 8;
-  regs[4] = tonec & 0xff;
-  regs[5] = tonec >> 8;
-  regs[6] = noise;
-  regs[7] = (~control) & 0x3f; 	/* invert bits 0-5 */
-  regs[10] = vola; 		/* included bit 4 */
-  regs[11] = volb;
-  regs[12] = volc;
-  regs[13] = envfreq & 0xff;
-  regs[14] = envfreq >> 8;
-  regs[15] = envstyle;
+  g_sys80_regs.ay[0].value = tonea & 0xff;
+  g_sys80_regs.ay[1].value = tonea >> 8;
+  g_sys80_regs.ay[2].value = toneb & 0xff;
+  g_sys80_regs.ay[3].value = toneb >> 8;
+  g_sys80_regs.ay[4].value = tonec & 0xff;
+  g_sys80_regs.ay[5].value = tonec >> 8;
+  g_sys80_regs.ay[6].value = noise;
+  g_sys80_regs.ay[7].value = (~control) & 0x3f; 	/* invert bits 0-5 */
+  g_sys80_regs.ay[10].value = vola; 		/* included bit 4 */
+  g_sys80_regs.ay[11].value = volb;
+  g_sys80_regs.ay[12].value = volc;
+  g_sys80_regs.ay[13].value = envfreq & 0xff;
+  g_sys80_regs.ay[14].value = envfreq >> 8;
+  g_sys80_regs.ay[15].value = envstyle;
+
+  for (int i = 0; i < 16; ++i) {
+    g_sys80_regs.ay[15].track = 0;
+  }
 }
 
 
@@ -132,6 +137,12 @@ void TestAudio(int test)
   test %= count_of(testcases);
   const char* name = testcases[test].name;
 
+  if (test == g_current_test) {
+    return;
+  }
+
+  g_current_test = test;
+  
   printf ("Test %d: %s\n", test, name);
   gen_sound (testcases[test].tonea, testcases[test].toneb, 
   testcases[test].tonec, testcases[test].noise,

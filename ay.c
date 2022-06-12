@@ -43,20 +43,18 @@ void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples, int cycles_pe
     g_time = last_time + cycles_per_sample;
 
     // Noise generator
-    int noise_period = ((g_sys80_regs.ay[6] & 0x1F) << 16) + 65536;
+    int noise_period = ((g_sys80_regs.ay[6].value & 0x1F) << 16) + 65536;
     if (AdvanceTime(&g_noise_reset_time, noise_period)) {
       g_noise_state = rosc_hw->randombit;
     }
 
     // Envelope generator
-    int env_style = g_sys80_regs.ay[15];
-    if ((env_style & 0x80) == 0) {
+    if (g_sys80_regs.ay[15].track == 0) {
       g_env_pos = 0;
-      g_sys80_regs.ay[15] = env_style | 0x80;
+      g_sys80_regs.ay[15].track = 1;
     }
-    env_style &= 0x0F;
 
-    int env_period = ((g_sys80_regs.ay[13] << 8) + (g_sys80_regs.ay[14] << 16)) + 256;
+    int env_period = ((g_sys80_regs.ay[13].value << 8) + (g_sys80_regs.ay[14].value << 16)) + 256;
     if (AdvanceTime(&g_env_reset_time, env_period)) {
       if (++g_env_pos >= 128) {
         g_env_pos = 64;
@@ -65,19 +63,20 @@ void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples, int cycles_pe
 
     // Tone enables in bits 0-2
     // Noise enables in bits 3-5
-    int enables = g_sys80_regs.ay[7];
+    int enables = g_sys80_regs.ay[7].value;
 
     int mix = 0;
     for (int j = 0; j < NUM_TONES; ++j) {
       // Tone generator
       Tone* tone = &g_tones[j];
-      int period = ((g_sys80_regs.ay[j * 2] << 4) + ((g_sys80_regs.ay[j*2 + 1] & 0x0F) << 12)) + 16;
+      int period = ((g_sys80_regs.ay[j * 2].value << 4) + ((g_sys80_regs.ay[j*2 + 1].value & 0x0F) << 12)) + 16;
       if (AdvanceTime(&tone->reset_time, period)) {
         tone->state = !tone->state;
       }
 
-      int amplitude = g_sys80_regs.ay[j + 10] & 0x1F;
+      int amplitude = g_sys80_regs.ay[j + 10].value & 0x1F;
       if (amplitude & 0x10) {
+        int env_style = g_sys80_regs.ay[15].value;
         amplitude = g_envelopes[env_style][g_env_pos];
       } else {
         amplitude = amplitude * 2 + 1;
