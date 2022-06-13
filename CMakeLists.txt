@@ -21,9 +21,6 @@ add_executable(pico-vdp
   scan_out.c
   sys80.c
   video_dma.c
-
-  third_party/libayemu/ay8912.c
-  third_party/libayemu/test.c
 )
 
 target_compile_definitions(pico-vdp PRIVATE
