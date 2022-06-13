@@ -11,7 +11,7 @@
 #include "sys80.h"
 
 #define AY_FREQ 1773400
-#define CYCLES_PER_SAMPLE 40
+#define CYCLES_PER_SAMPLE 16
 #define SAMPLE_FREQ (AY_FREQ / CYCLES_PER_SAMPLE)
 
 
@@ -28,7 +28,7 @@ void STRIPED_SECTION BufferISR() {
   for (int i = 0; i < 2; ++i) {
     if (dma_irqn_get_channel_status(DMA_IRQ_1, g_dma_channels[i])) {
       dma_irqn_acknowledge_channel(DMA_IRQ_1, g_dma_channels[i]);
-      GenerateAY(g_buffers[i], BUFFER_SIZE, CYCLES_PER_SAMPLE);
+      GenerateAY(g_buffers[i], BUFFER_SIZE);
     }
   }
 }
@@ -41,6 +41,7 @@ static void InitPWM() {
 
   pwm_config cfg = pwm_get_default_config();
   pwm_config_set_wrap(&cfg, 0xFF);
+  pwm_config_set_phase_correct(&cfg, true);
   pwm_init(g_pwm_slice, &cfg, true);
 }
 

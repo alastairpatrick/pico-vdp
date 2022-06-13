@@ -4,7 +4,6 @@
 
 #define NUM_TONES 3
 
-
 typedef struct {
   int64_t reset_time;
   bool state;
@@ -44,9 +43,10 @@ static bool STRIPED_SECTION AdvanceTime(int64_t* reset_time, int64_t period) {
   return false;
 }
 
-void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples, int cycles_per_sample) {
+void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples) {
   for (int i = 0; i < num_samples; ++i) {
-    g_time += 320;// 296;  // TODO: why is cycles_per_sample too low?
+    // All periods are a multiple of 16 cycles so only need to recalculate every 16 cycles.
+    g_time += 16;
 
     // Noise generator
     int noise_period = ((g_sys80_regs.ay[6].value & 0x1F) << 4);
