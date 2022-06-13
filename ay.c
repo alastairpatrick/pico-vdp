@@ -16,6 +16,8 @@ static Tone g_tones[NUM_TONES];
 static int64_t g_env_reset_time;
 static int g_env_pos;
 
+#pragma GCC optimize("O3")
+
 /*int16_t g_vol_table[32] = {
   0, 0, 63, 95, 125, 157, 187, 221,
   289, 377, 505, 601, 751, 949, 1117, 1287,
