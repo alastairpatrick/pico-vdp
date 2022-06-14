@@ -24,11 +24,22 @@
 #endif
 
 enum {
+  BLIT_FLAG_BLEND         = 0x0007,
+  BLIT_FLAG_BLEND_REPLACE = 0x0000,
+  BLIT_FLAG_BLEND_AND     = 0x0001,
+  BLIT_FLAG_BLEND_OR      = 0x0002,
+  BLIT_FLAG_BLEND_XOR     = 0x0003,
+  BLIT_FLAG_BLEND_ADD     = 0x0004,
+  BLIT_FLAG_BLEND_SUB     = 0x0005,
+  BLIT_FLAG_BLEND_ADDS    = 0x0006,
+  BLIT_FLAG_BLEND_SUBS    = 0x0007,
+
   BLIT_FLAG_UNPACK        = 0x0300,
   BLIT_FLAG_UNPACK_OFF    = 0x0000,
   BLIT_FLAG_UNPACK_8_16   = 0x0100,
   BLIT_FLAG_UNPACK_8_32   = 0x0200,
   BLIT_FLAG_UNPACK_16_32  = 0x0300,
+
   BLIT_FLAG_MASKED        = 0x0400,
 };
 
@@ -317,7 +328,18 @@ static ReadSourceDataFn STRIPED_SECTION PrepareReadSourceData(Opcode opcode) {
   }
 }
 
-static uint32_t STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data, uint32_t mask) {
+static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr) {
+  switch (opcode & BLIT_OP_DEST) {
+  case BLIT_OP_DEST_BLITTER:
+    return ReadBlitterBank(baddr);
+  case BLIT_OP_DEST_DISPLAY:
+    return ReadDisplayBank(daddr);
+  //default:
+    //assert(false);
+  }
+}
+
+static void STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, uint32_t data, uint32_t mask) {
   switch (opcode & BLIT_OP_DEST) {
   case BLIT_OP_DEST_BLITTER:
     WriteBlitterBank(baddr, (ReadBlitterBank(baddr) & ~mask) | (data & mask));
@@ -340,11 +362,52 @@ static uint32_t STRIPED_SECTION Parallel8(int v) {
   return v;
 }
 
-static PerfCounter g_blit_setup_perf;
-static PerfCounter g_blit_cycle_perf[4];
+static uint32_t STRIPED_SECTION ParallelAdd(uint32_t a8, uint32_t b8) {
+  uint32_t r8 = 0;
+  for (int i = 0; i < 32; i += 4) {
+    int a = (a8 >> i) & 0xF;
+    int b = (b8 >> i) & 0xF;
+    int r = (a + b) & 0xF;
+    r8 |= r << i;
+  }
+  return r8;
+}
+
+static uint32_t STRIPED_SECTION ParallelSub(uint32_t a8, uint32_t b8) {
+  uint32_t r8 = 0;
+  for (int i = 0; i < 32; i += 4) {
+    int a = (a8 >> i) & 0xF;
+    int b = (b8 >> i) & 0xF;
+    int r = (a - b) & 0xF;
+    r8 |= r << i;
+  }
+  return r8;
+}
+
+static uint32_t STRIPED_SECTION ParallelAddSat(uint32_t a8, uint32_t b8) {
+  uint32_t r8 = 0;
+  for (int i = 0; i < 32; i += 4) {
+    int a = (a8 >> i) & 0xF;
+    int b = (b8 >> i) & 0xF;
+    int r = Min(0xF, (a + b));
+    r8 |= r << i;
+  }
+  return r8;
+}
+
+static uint32_t STRIPED_SECTION ParallelSubSat(uint32_t a8, uint32_t b8) {
+  uint32_t r8 = 0;
+  for (int i = 0; i < 32; i += 4) {
+    int a = (a8 >> i) & 0xF;
+    int b = (b8 >> i) & 0xF;
+    int r = Max(0, (a - b));
+    r8 |= r << i;
+  }
+  return r8;
+}
+
 static void STRIPED_SECTION DoBlit(Opcode opcode) {
   //DisableXIPCache();
-  BeginPerf(&g_blit_setup_perf);
 
   int dest_daddr = g_blit_regs[BLIT_REG_DST_ADDR];
   int src_daddr = g_blit_regs[BLIT_REG_SRC_ADDR];
@@ -416,11 +479,9 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
   int dest_x = width;
   int dest_y = -1;
 
-  EndPerf(&g_blit_setup_perf);
+  int iteration_cycles = flags & BLIT_FLAG_BLEND ? 3 : 2;
 
   for (;;) {
-    BeginPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
-    
     if (src_x >= width) {
       //MCycle(1);
 
@@ -495,16 +556,41 @@ static void STRIPED_SECTION DoBlit(Opcode opcode) {
         // Optionally remap colors.
         color8 = (fg_color8 & color8) | (bg_color8 & ~color8);
 
-        EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
-        MCycle(2);
+        if (flags & BLIT_FLAG_BLEND) {
+          uint32_t dest_color8 = ReadDestData(opcode, dest_daddr_word, dest_baddr);
+          switch (flags & BLIT_FLAG_BLEND) {
+          case BLIT_FLAG_BLEND_AND:
+            color8 &= dest_color8;
+            break;
+          case BLIT_FLAG_BLEND_OR:
+            color8 |= dest_color8;
+            break;
+          case BLIT_FLAG_BLEND_XOR:
+            color8 ^= dest_color8;
+            break;
+          case BLIT_FLAG_BLEND_ADD:
+            color8 = ParallelAdd(color8, dest_color8);
+            break;          
+          case BLIT_FLAG_BLEND_SUB:
+            color8 = ParallelSub(color8, dest_color8);
+            break;          
+          case BLIT_FLAG_BLEND_ADDS:
+            color8 = ParallelAddSat(color8, dest_color8);
+            break;          
+          case BLIT_FLAG_BLEND_SUBS:
+            color8 = ParallelSubSat(color8, dest_color8);
+            break;          
+          }
+        }
+
+        MCycle(iteration_cycles);
         WriteDestData(opcode, dest_daddr_word, dest_baddr, color8, mask8);
 
         dest_x += 32;
         ++dest_daddr_word;
         ++dest_baddr;
       } else {
-        EndPerf(&g_blit_cycle_perf[opcode & BLIT_OP_SRC]);
-        MCycle(2);
+        MCycle(iteration_cycles);
       }
     }
 
