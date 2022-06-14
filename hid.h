@@ -1,6 +1,6 @@
 #ifndef HID_H
 #define HID_H
 
-void UpdateKeyboardLEDs();
+void UpdateKeyboard();
 
 #endif  // HID_H

@@ -29,7 +29,7 @@ void ScanMain() {
   StartVideo();  
 
   for (;;) {
-    UpdateKeyboardLEDs();
+    UpdateKeyboard();
     tuh_task();
   }
 }

@@ -45,7 +45,7 @@ static bool STRIPED_SECTION AdvanceTime(int64_t* reset_time, int64_t period) {
   return false;
 }
 
-void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples) {
+void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples, int volume) {
   for (int i = 0; i < num_samples; ++i) {
     // All periods are a multiple of 16 cycles so only need to recalculate every 16 cycles.
     g_time += 16;
@@ -99,7 +99,7 @@ void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples) {
       }
     }
 
-    buffer[i] = mix >> 9;
+    buffer[i] = (mix * volume) >> 16;
   }
 }
 

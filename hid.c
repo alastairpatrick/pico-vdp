@@ -107,7 +107,7 @@ static void ProcessGenericReport(uint8_t dev_addr, uint8_t instance, uint8_t con
   }
 }
 
-void UpdateKeyboardLEDs() {
+static void UpdateLEDs() {
   int leds = g_sys80_regs.leds;
   uint8_t led_state = 0;
   if (leds & LED_CAPS_LOCK_MASK) {
@@ -124,6 +124,10 @@ void UpdateKeyboardLEDs() {
     g_led_state = led_state;
     tuh_hid_set_report(g_kbd_dev_addr, g_kbd_instance, 0, HID_REPORT_TYPE_OUTPUT, &led_state, sizeof(led_state));
   }
+}
+
+void UpdateKeyboard() {
+  UpdateLEDs();
 }
 
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance, uint8_t const* desc_report, uint16_t desc_len) {

@@ -24,11 +24,13 @@ static int g_dma_timer;
 
 static uint16_t g_buffers[2][BUFFER_SIZE] __attribute__ ((aligned(BUFFER_SIZE*2)));
 
+static int g_volume = 128;
+
 void STRIPED_SECTION BufferISR() {
   for (int i = 0; i < 2; ++i) {
     if (dma_irqn_get_channel_status(DMA_IRQ_1, g_dma_channels[i])) {
       dma_irqn_acknowledge_channel(DMA_IRQ_1, g_dma_channels[i]);
-      GenerateAY(g_buffers[i], BUFFER_SIZE);
+      GenerateAY(g_buffers[i], BUFFER_SIZE, g_volume);
     }
   }
 }
@@ -78,3 +80,14 @@ void InitAudio() {
   InitPWM();
   InitDMA();
 }
+
+void ChangeVolume(int delta) {
+  g_volume += delta;
+  if (g_volume > 256) {
+    g_volume = 256;
+  }
+  if (g_volume < 0) {
+    g_volume = 0;
+  }
+}
+
