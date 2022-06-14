@@ -51,6 +51,7 @@ enum {
   BLIT_REG_PITCH          = 4,  // Offset added to display address.
   BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
   BLIT_REG_COLORS         = 6,  // Array of colors.
+  BLIT_REG_SYNC           = 7,  // Does not affect blitter.
 };
 
 enum {
@@ -227,7 +228,11 @@ static int STRIPED_SECTION GetRegister(int idx) {
 }
 
 static void STRIPED_SECTION SetRegister(int idx, int data) {
-  g_blit_regs[idx & (NUM_BLIT_REGS-1)] = data;
+  idx &= (NUM_BLIT_REGS-1);
+  g_blit_regs[idx] = data;
+
+  // Read only view for CPU.
+  g_sys80_regs.blit[idx] = Swizzle16BitSys80Reg(data);
 }
 
 // Packed variants all use byte offsets as addr.

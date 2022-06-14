@@ -61,6 +61,7 @@ typedef struct {
       uint16_t pad3[31];
 
       // Blitter range $Cx
+      uint32_t blit[8];              // $C0
     };
     uint16_t ro_bytes[128];
   };
@@ -78,6 +79,10 @@ static inline bool STRIPED_SECTION IsSys80FifoEmpty() {
 
 static inline uint32_t STRIPED_SECTION PopSys80Fifo() {
   return pio_sm_get(pio1, 3);
+}
+
+static inline uint32_t STRIPED_SECTION Swizzle16BitSys80Reg(int data) {
+  return (data & 0xFF) | ((data & 0xFF00) << 8);
 }
 
 #endif  // SYS80_H
