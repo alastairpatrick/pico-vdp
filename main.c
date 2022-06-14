@@ -50,5 +50,5 @@ int main() {
   InitSys80();
 
   multicore_launch_core1(ScanMain);
-  BlitMain();
+  BlitMain(); 
 }

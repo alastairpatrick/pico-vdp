@@ -320,6 +320,6 @@ void InitVideoInterrupts() {
 
   pio_set_irq0_source_enabled(PIO, pis_interrupt0, true);
   irq_set_exclusive_handler(PIO_IRQ, LineISR);
-  irq_set_priority(PIO_IRQ, 0x00);
+  irq_set_priority(PIO_IRQ, 0x40);
   irq_set_enabled(PIO_IRQ, true);
 }

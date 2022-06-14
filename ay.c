@@ -92,24 +92,20 @@ void STRIPED_SECTION GenerateAY(uint16_t* buffer, int num_samples) {
         amplitude = amplitude * 2 + 1;
       }
 
-      bool tone_disable = enables & 0x1;
-      bool noise_disable = (enables >> 3) & 0x1;
+      bool tone_disable = (enables >> j) & 0x1;
+      bool noise_disable = (enables >> (j+3)) & 0x1;
       if ((tone->state || tone_disable) && (g_noise_state || noise_disable)) {
         mix += g_vol_table[amplitude];
       }
-
-      enables >>= 1;
     }
 
-    buffer[i] = mix >> 8;
+    buffer[i] = mix >> 9;
   }
 }
 
 
 void InitAY() {
-  g_sys80_regs.ay[7].value = 0x3F;
-
-  for (int i = 0; i < 32; ++i) {
+  for (int i = 4; i < 32; ++i) {
     g_vol_table[i] = (i * 21845) / 31;
   }
 

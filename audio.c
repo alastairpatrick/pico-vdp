@@ -15,7 +15,7 @@
 #define SAMPLE_FREQ (AY_FREQ / CYCLES_PER_SAMPLE)
 
 
-#define BUFFER_SIZE_BITS 8
+#define BUFFER_SIZE_BITS 1
 #define BUFFER_SIZE (1 << BUFFER_SIZE_BITS)
 
 static int g_pwm_slice, g_pwm_channel;
@@ -68,7 +68,7 @@ static void InitDMA() {
   }
 
   irq_add_shared_handler(DMA_IRQ_1, BufferISR, PICO_SHARED_IRQ_HANDLER_DEFAULT_ORDER_PRIORITY);
-  irq_set_priority(DMA_IRQ_1, 0x40);
+  irq_set_priority(DMA_IRQ_1, 0x00);
   irq_set_enabled(DMA_IRQ_1, true);
   dma_channel_start(g_dma_channels[0]);
 }
