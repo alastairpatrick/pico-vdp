@@ -28,14 +28,6 @@ _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
 _PORT_BLIT              .EQU    $B2
 
-_REG_TONE_A_FINE        .EQU    $00
-_REG_TONE_A_COARSE      .EQU    $01
-_REG_MIXER              .EQU    $07
-_REG_AMP_A              .EQU    $0A
-_REG_ENV_FINE           .EQU    $0D
-_REG_ENV_COARSE         .EQU    $0E
-_REG_ENV_SHAPE          .EQU    $0F
-
 _REG_FIFO_WRAP          .EQU    $40
 _REG_FONT_PG            .EQU    $21
 _REG_LEDS               .EQU    $1F
@@ -596,10 +588,6 @@ PVDP_SET_CHAR_COLOR:
 ;  A: 0
 
 PVDP_WRITE_CHAR:
-        LD      A, E
-        CP      7
-        JP      Z, _BELL
-
         CALL    _WRITE_CHAR
         CALL    _UPDATE_SPRITE
         CALL    _BLIT_FLUSH
@@ -683,49 +671,7 @@ _WC_SKIP_NEWLINE:
         LD      (_POS), A
         RET
 
-_BELL:
-        PUSH    BC
-        PUSH    DE
 
-        LD      C, _REG_TONE_A_FINE
-        LD      D, 10
-        CALL    _SET_REG_D
-
-        LD      C, _REG_TONE_A_COARSE
-        LD      D, 0
-        CALL    _SET_REG_D
-
-        ; Enable only tone A
-        LD      C, _REG_MIXER
-        LD      D, $3E
-        CALL    _SET_REG_D
-
-        ; Envelope controlled amplitude
-        LD      C, _REG_AMP_A
-        LD      D, $10
-        CALL    _SET_REG_D
-
-        ; Envelopse controls duration
-        LD      C, _REG_ENV_FINE
-        LD      D, 50
-        CALL    _SET_REG_D
-
-        LD      C, _REG_ENV_COARSE
-        LD      D, 0
-        CALL    _SET_REG_D
-
-        ; Trigger envelope
-        LD      C, _REG_ENV_SHAPE
-        LD      D, $00
-        CALL    _SET_REG_D
-
-        POP     DE
-        POP     BC
-        XOR     A
-        RET
-
-
-        ; Tone A coarse t
 ; Entry:
 ;  E: Character
 ;  HL: Count
