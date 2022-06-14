@@ -55,25 +55,30 @@ enum {
 };
 
 enum {
-  BLIT_OP_SRC             = 0x03,
-  BLIT_OP_SRC_DISPLAY     = 0x00,
-  BLIT_OP_SRC_BLITTER     = 0x01,
-  BLIT_OP_SRC_ZERO        = 0x02,
-  BLIT_OP_SRC_STREAM      = 0x03,
-
-  BLIT_OP_DEST            = 0x04,
-  BLIT_OP_DEST_DISPLAY    = 0x00,
-  BLIT_OP_DEST_BLITTER    = 0x04,
+  BLIT_OP_FLAGS_EN        = 0x01,
+  BLIT_OP_CLIP_EN         = 0x02,
+  BLIT_OP_COLOR_EN        = 0x04,
 
   BLIT_OP_TOPY            = 0x08,
-  BLIT_OP_TOPY_PLAN       = 0x00,
-  BLIT_OP_TOPY_LIN        = 0x08,
+  BLIT_OP_TOPY_PLAN       = 0x08,
+  BLIT_OP_TOPY_LIN        = 0x00,
 
-  BLIT_OP_FLAGS_EN        = 0x10,
-  BLIT_OP_CLIP_EN         = 0x20,
-  BLIT_OP_COLOR_EN        = 0x40,
+  BLIT_OP_SRC             = 0x30,
+  BLIT_OP_SRC_DISPLAY     = 0x00,
+  BLIT_OP_SRC_BLITTER     = 0x10,
+  BLIT_OP_SRC_ZERO        = 0x20,
+  BLIT_OP_SRC_STREAM      = 0x30,
+
+  BLIT_OP_DEST            = 0xC0,
+  BLIT_OP_DEST_COLORS     = 0x40,
+  BLIT_OP_DEST_DISPLAY    = 0x80,
+  BLIT_OP_DEST_BLITTER    = 0xC0,
 };
 
+// 00xxxxxx - Everything else
+// 01xxxxxx - Blit operation, destination COLORS register
+// 10xxxxxx - Blit operation, destination display bank
+// 11xxxxxx - Blit operation, destination blitter bank
 typedef enum {
   OPCODE_SET0,
   OPCODE_SET1,
@@ -84,20 +89,20 @@ typedef enum {
   OPCODE_SET6,
   OPCODE_SET7,
 
-  OPCODE_BLIT_BASE  = 0x80,
- 
-  OPCODE_DCLEAR     = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_COLOR_EN,  // 0xCA
-  OPCODE_DDCOPY     = OPCODE_BLIT_BASE | BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                     // 0xA0
-  OPCODE_DSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                           // 0x8B
-  OPCODE_BSTREAM    = OPCODE_BLIT_BASE | BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                           // 0x8F
-  OPCODE_RECT       = OPCODE_BLIT_BASE | BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_COLOR_EN,  // 0xC2
-  OPCODE_IMAGE      = OPCODE_BLIT_BASE | BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_COLOR_EN,  // 0xF1
+  OPCODE_DSAMPLE    = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_COLORS  | BLIT_OP_TOPY_PLAN,                                                          // 0x48
 
-  OPCODE_SWAP0      = 0x48,
-  OPCODE_SWAP1      = 0x49,
-  OPCODE_SWAP2      = 0x4A,
-  OPCODE_SWAP3      = 0x4B,
-  OPCODE_NOP        = 0x4F,
+  OPCODE_DCLEAR     = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_COLOR_EN,  // 0xA4
+  OPCODE_DDCOPY     = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                     // 0x8A
+  OPCODE_DSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                           // 0xB0
+  OPCODE_BSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                           // 0xF0
+  OPCODE_RECT       = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_COLOR_EN,  // 0xAC
+  OPCODE_IMAGE      = BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_COLOR_EN,  // 0x9F
+
+  OPCODE_SWAP0      = 0x38,
+  OPCODE_SWAP1      = 0x39,
+  OPCODE_SWAP2      = 0x3A,
+  OPCODE_SWAP3      = 0x3B,
+  OPCODE_NOP        = 0x3F,
 } Opcode;
 
 typedef struct {
@@ -339,8 +344,8 @@ static uint32_t STRIPED_SECTION ReadDestData(Opcode opcode, int daddr, int baddr
     return ReadBlitterBank(baddr);
   case BLIT_OP_DEST_DISPLAY:
     return ReadDisplayBank(daddr);
-  //default:
-    //assert(false);
+  default:
+    return g_blit_regs[BLIT_REG_COLORS];
   }
 }
 
@@ -348,10 +353,13 @@ static void STRIPED_SECTION WriteDestData(Opcode opcode, int daddr, int baddr, u
   switch (opcode & BLIT_OP_DEST) {
   case BLIT_OP_DEST_BLITTER:
     WriteBlitterBank(baddr, (ReadBlitterBank(baddr) & ~mask) | (data & mask));
+    break;
   case BLIT_OP_DEST_DISPLAY:
     WriteDisplayBank(daddr, (ReadDisplayBank(daddr) & ~mask) | (data & mask));
-  //default:
-    //assert(false);
+    break;
+  default:
+    SetRegister(BLIT_REG_COLORS, (g_blit_regs[BLIT_REG_COLORS] & ~mask) | (data & mask));
+    break;
   }
 }
 
@@ -658,7 +666,6 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_NOP:
       break;
     default:
-      assert(opcode & OPCODE_BLIT_BASE);
       DoBlit(opcode);
       break;
     }
