@@ -5,13 +5,14 @@ static void STRIPED_SECTION FUNC_NAME(Opcode opcode) {
   int src_daddr = g_blit_regs[BLIT_REG_SRC_ADDR];
   int dest_baddr = g_blit_regs[BLIT_REG_DST_ADDR];
   int src_baddr_byte = g_blit_regs[BLIT_REG_SRC_ADDR] * 4;
-  int flags = g_blit_regs[BLIT_REG_FLAGS];
   int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
 
-  uint32_t mask_disable8 = 0xFFFFFFFF;
+  int flags = 0;
   if (opcode & BLIT_OP_FLAGS_EN) {
-    mask_disable8 = flags & BLIT_FLAG_MASKED ? 0x00000000 : 0xFFFFFFFF;
+    flags = g_blit_regs[BLIT_REG_FLAGS];
   }
+
+  uint32_t mask_disable8 = flags & BLIT_FLAG_MASKED ? 0x00000000 : 0xFFFFFFFF;
 
   uint32_t bg_color8 = 0x00000000;
   uint32_t fg_color8 = 0xFFFFFFFF;
