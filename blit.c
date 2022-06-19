@@ -386,6 +386,10 @@ static uint32_t STRIPED_SECTION ParallelAdd(uint32_t a8, uint32_t b8) {
   return r8;
 }
 
+// These ParallelX(a,b) functions could be optimized more but there's no reason
+// at the time of writing. They are only used when blending is enabled and in that
+// case, there is an additional m-cycle.
+
 static uint32_t STRIPED_SECTION ParallelSub(uint32_t a8, uint32_t b8) {
   uint32_t r8 = 0;
   for (int i = 0; i < 32; i += 4) {
