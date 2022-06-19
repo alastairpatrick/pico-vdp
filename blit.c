@@ -51,7 +51,8 @@ enum {
   BLIT_REG_PITCH          = 4,  // Offset added to display address.
   BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
   BLIT_REG_COLORS         = 6,  // Array of colors.
-  BLIT_REG_SYNC           = 7,  // Does not affect blitter.
+  BLIT_REG_GUARD          = 7,  // 2KB display bank pages that are read-only.
+  BLIT_REG_SYNC           = 15, // Does not affect blitter.
 };
 
 enum {
@@ -258,7 +259,11 @@ static uint32_t STRIPED_SECTION ReadDisplayBank(unsigned addr) {
 }
 
 static void STRIPED_SECTION WriteDisplayBank(unsigned addr, uint32_t data) {
-  g_blit_display_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
+  int page = addr >> 9;
+  int guard = g_blit_regs[BLIT_REG_GUARD];
+  if (((guard >> page) & 1) == 0) {
+    g_blit_display_bank->words[addr & (DISPLAY_BANK_SIZE-1)] = data;
+  }
 }
 
 typedef uint32_t (*ReadSourceDataFn)(int daddr, int* baddr_byte);

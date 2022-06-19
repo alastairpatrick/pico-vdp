@@ -55,6 +55,7 @@ _BCMD_SET_DST_ADDR      .EQU    $00
 _BCMD_SET_SRC_ADDR      .EQU    $02
 _BCMD_SET_DPITCH        .EQU    $04
 _BCMD_SET_FLAGS         .EQU    $05
+_BCMD_SET_GUARD         .EQU    $07
 
 
 _FONT_SIZE              .EQU    $800
@@ -228,6 +229,11 @@ _INIT_LINES:
         PUSH    DE
         PUSH    HL
 
+        ; Disable display bank memory protection.
+        LD      DE, $0000
+        LD      C, _BCMD_SET_GUARD
+        CALL    _BLIT_CMD_DE
+
         ; Initialize lines.
         LD      DE, $C000
         LD      C, _BCMD_SET_DST_ADDR
@@ -330,6 +336,11 @@ _COPY_FONT:
 
 _INIT_BLIT_REGS:
         PUSH    DE
+
+        ; Enable display bank memory protection.
+        LD      DE, $F000
+        LD      C, _BCMD_SET_GUARD
+        CALL    _BLIT_CMD_DE
 
         ; PITCH = _SCAN_WORDS*8
         LD      DE, _SCAN_WORDS*8
