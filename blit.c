@@ -46,6 +46,7 @@ enum {
 enum {
   BLIT_REG_DEST_ADDR      = 0,  // Destination address
   BLIT_REG_SRC_ADDR       = 1,  // Source address
+  BLIT_REG_STACK_ADDR     = 2,  // Top of stack in blitter bank
   BLIT_REG_COUNT          = 4,  // Iteration count or count pair.
   BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
   BLIT_REG_COLORS         = 6,  // Array of colors.
@@ -76,27 +77,22 @@ enum {
   BLIT_OP_DEST_BLITTER    = 0xC0,
 };
 
-// 00xxxxxx - Everything else
+// 0000dddd - SET dddd, #imm
+// 00010sss - PUSH sss
+// 00011ddd - POP ddd
+// 0010ssdd - MOVE ss, dd
+// 001110nn - SWAP nn
 // 01xxxxxx - Blit operation, destination COLORS register
 // 10xxxxxx - Blit operation, destination display bank
 // 11xxxxxx - Blit operation, destination blitter bank
 typedef enum {
-  OPCODE_SET0,
-  OPCODE_SET1,
-  OPCODE_SET2,
-  OPCODE_SET3,
-  OPCODE_SET4,
-  OPCODE_SET5,
-  OPCODE_SET6,
-  OPCODE_SET7,
-  OPCODE_SET8,
-  OPCODE_SET9,
-  OPCODE_SET10,
-  OPCODE_SET11,
-  OPCODE_SET12,
-  OPCODE_SET13,
-  OPCODE_SET14,
-  OPCODE_SET15,
+  OPCODE_SET        = 0x00,
+  OPCODE_PUSH       = 0x10,
+  OPCODE_POP        = 0x18,
+  OPCODE_MOVE       = 0x20,
+  OPCODE_NOP        = 0x20,   // MOVE R0, R0
+  OPCODE_SWAP       = 0x38,
+  OPCODE_BLIT_BASE  = 0x40,
 
   OPCODE_DSAMPLE    = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_COLORS  | BLIT_OP_TOPY_PLAN,                                                          // 0x48
 
@@ -106,12 +102,6 @@ typedef enum {
   OPCODE_BSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                           // 0xF0
   OPCODE_RECT       = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_COLOR_EN,  // 0xAC
   OPCODE_IMAGE      = BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_COLOR_EN,  // 0x9F
-
-  OPCODE_SWAP0      = 0x38,
-  OPCODE_SWAP1      = 0x39,
-  OPCODE_SWAP2      = 0x3A,
-  OPCODE_SWAP3      = 0x3B,
-  OPCODE_NOP        = 0x3F,
 } Opcode;
 
 typedef struct {
@@ -242,11 +232,27 @@ static int STRIPED_SECTION GetRegister(int idx) {
 }
 
 static void STRIPED_SECTION SetRegister(int idx, int data) {
-  idx &= (NUM_BLIT_REGS-1);
+  idx &= (NUM_BLIT_REGS-1);  
   g_blit_regs[idx] = data;
 
   // Read only view for CPU.
   g_sys80_regs.blit[idx] = Swizzle16BitSys80Reg(data);
+}
+
+static void STRIPED_SECTION PushRegister(int idx) {
+  int top = g_blit_regs[BLIT_REG_STACK_ADDR];
+  WriteBlitterBank(top, GetRegister(idx));
+  SetRegister(BLIT_REG_STACK_ADDR, top + 1);
+}
+
+static void STRIPED_SECTION PopRegister(int idx) {
+  int top = g_blit_regs[BLIT_REG_STACK_ADDR] - 1;
+  SetRegister(idx, ReadBlitterBank(top));
+  SetRegister(BLIT_REG_STACK_ADDR, top);
+}
+
+static void STRIPED_SECTION MoveRegister(int dest, int source) {
+  SetRegister(dest, GetRegister(source));
 }
 
 // Packed variants all use byte offsets as addr.
@@ -488,40 +494,26 @@ void STRIPED_SECTION BlitMain() {
     Opcode opcode = (Opcode) PopCmdFifo(8);
     MCycle(1);
 
-    switch (opcode) {
-    case OPCODE_SET0:
-    case OPCODE_SET1:
-    case OPCODE_SET2:
-    case OPCODE_SET3:
-    case OPCODE_SET4:
-    case OPCODE_SET5:
-    case OPCODE_SET6:
-    case OPCODE_SET7:
-    case OPCODE_SET8:
-    case OPCODE_SET9:
-    case OPCODE_SET10:
-    case OPCODE_SET11:
-    case OPCODE_SET12:
-    case OPCODE_SET13:
-    case OPCODE_SET14:
-    case OPCODE_SET15:
+    if (opcode < OPCODE_PUSH) {
       SetRegister(opcode, PopCmdFifo(16));
-      break;
-    case OPCODE_SWAP0:
-    case OPCODE_SWAP1:
-    case OPCODE_SWAP2:
-    case OPCODE_SWAP3:
+    } else if (opcode < OPCODE_POP) {
+      // Do PUSH
+      PushRegister(opcode & 0x7);
+    } else if (opcode < OPCODE_MOVE) {
+      // Do POP
+      PopRegister(opcode & 0x7);
+    } else if (opcode < OPCODE_SWAP) {
+      // Do MOVE
+      MoveRegister(opcode & 0x3, (opcode & 0xC0) >> 2);
+    } else if (opcode < OPCODE_BLIT_BASE) {
+      // Do SWAP
       DoSwap((SwapMode) (opcode & SWAP_MASK));
-      break;
-    case OPCODE_NOP:
-      break;
-    default:
+    } else {
       if ((opcode & BLIT_OP_SRC) == BLIT_OP_SRC_ZERO) {
         DoBlitSrcZero(opcode);
       } else {
         DoBlit(opcode);
       }
-      break;
     }
   }
 }

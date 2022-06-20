@@ -46,7 +46,7 @@ _BCMD_DCLEAR            .EQU    $A4
 _BCMD_DDCOPY            .EQU    $8A
 _BCMD_DSTREAM           .EQU    $B0
 _BCMD_IMAGE             .EQU    $9F
-_BCMD_NOP               .EQU    $3F
+_BCMD_NOP               .EQU    $20
 _BCMD_RECT              .EQU    $AC
 _BCMD_SET_COUNT         .EQU    $04
 _BCMD_SET_CLIP          .EQU    $07
