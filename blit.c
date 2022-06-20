@@ -12,7 +12,7 @@
 #include "sys80.h"
 #include "video_dma.h"
 
-#define NUM_BLIT_REGS 8
+#define NUM_BLIT_REGS 16
 #define BLITTER_BANK_SIZE (128 * 1024 / sizeof(uint32_t))
 
 #define OPTIMIZE
@@ -44,14 +44,14 @@ enum {
 };
 
 enum {
-  BLIT_REG_DST_ADDR       = 0,  // Address of nibble in display bank.
-  BLIT_REG_CLIP           = 1,  // Left side of unclipped area.
-  BLIT_REG_SRC_ADDR       = 2,  // Address of a 32-bit word in blitter bank.
-  BLIT_REG_COUNT          = 3,  // Iteration count or count pair.
-  BLIT_REG_PITCH          = 4,  // Offset added to display address.
+  BLIT_REG_DEST_ADDR      = 0,  // Destination address
+  BLIT_REG_SRC_ADDR       = 1,  // Source address
+  BLIT_REG_COUNT          = 4,  // Iteration count or count pair.
   BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
   BLIT_REG_COLORS         = 6,  // Array of colors.
-  BLIT_REG_GUARD          = 7,  // 2KB display bank pages that are read-only.
+  BLIT_REG_CLIP           = 7,  // Left side of unclipped area.
+  BLIT_REG_PITCH          = 8,  // Offset added to display address.
+  BLIT_REG_GUARD          = 9,  // 2KB display bank pages that are read-only.
   BLIT_REG_SYNC           = 15, // Does not affect blitter.
 };
 
@@ -89,6 +89,14 @@ typedef enum {
   OPCODE_SET5,
   OPCODE_SET6,
   OPCODE_SET7,
+  OPCODE_SET8,
+  OPCODE_SET9,
+  OPCODE_SET10,
+  OPCODE_SET11,
+  OPCODE_SET12,
+  OPCODE_SET13,
+  OPCODE_SET14,
+  OPCODE_SET15,
 
   OPCODE_DSAMPLE    = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_COLORS  | BLIT_OP_TOPY_PLAN,                                                          // 0x48
 
@@ -489,6 +497,14 @@ void STRIPED_SECTION BlitMain() {
     case OPCODE_SET5:
     case OPCODE_SET6:
     case OPCODE_SET7:
+    case OPCODE_SET8:
+    case OPCODE_SET9:
+    case OPCODE_SET10:
+    case OPCODE_SET11:
+    case OPCODE_SET12:
+    case OPCODE_SET13:
+    case OPCODE_SET14:
+    case OPCODE_SET15:
       SetRegister(opcode, PopCmdFifo(16));
       break;
     case OPCODE_SWAP0:

@@ -48,14 +48,14 @@ _BCMD_DSTREAM           .EQU    $B0
 _BCMD_IMAGE             .EQU    $9F
 _BCMD_NOP               .EQU    $3F
 _BCMD_RECT              .EQU    $AC
-_BCMD_SET_COUNT         .EQU    $03
-_BCMD_SET_CLIP          .EQU    $01
+_BCMD_SET_COUNT         .EQU    $04
+_BCMD_SET_CLIP          .EQU    $07
 _BCMD_SET_COLORS        .EQU    $06
 _BCMD_SET_DST_ADDR      .EQU    $00
-_BCMD_SET_SRC_ADDR      .EQU    $02
-_BCMD_SET_DPITCH        .EQU    $04
+_BCMD_SET_SRC_ADDR      .EQU    $01
+_BCMD_SET_DPITCH        .EQU    $08
 _BCMD_SET_FLAGS         .EQU    $05
-_BCMD_SET_GUARD         .EQU    $07
+_BCMD_SET_GUARD         .EQU    $09
 
 
 _FONT_SIZE              .EQU    $800

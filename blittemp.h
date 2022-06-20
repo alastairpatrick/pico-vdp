@@ -1,9 +1,9 @@
 static void STRIPED_SECTION FUNC_NAME(Opcode opcode) {
   //DisableXIPCache();
 
-  int dest_daddr = g_blit_regs[BLIT_REG_DST_ADDR];
+  int dest_daddr = g_blit_regs[BLIT_REG_DEST_ADDR];
   int src_daddr = g_blit_regs[BLIT_REG_SRC_ADDR];
-  int dest_baddr = g_blit_regs[BLIT_REG_DST_ADDR];
+  int dest_baddr = g_blit_regs[BLIT_REG_DEST_ADDR];
   int src_baddr_byte = g_blit_regs[BLIT_REG_SRC_ADDR] * 4;
   int pitch = (int16_t) g_blit_regs[BLIT_REG_PITCH];
 
