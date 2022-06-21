@@ -241,14 +241,16 @@ static void STRIPED_SECTION SetRegister(int idx, int data) {
 
 static void STRIPED_SECTION PushRegister(int idx) {
   int top = g_blit_regs[BLIT_REG_STACK_ADDR];
-  WriteBlitterBank(top, GetRegister(idx));
   SetRegister(BLIT_REG_STACK_ADDR, top + 1);
+  MCycle(1);
+  WriteBlitterBank(top, GetRegister(idx));
 }
 
 static void STRIPED_SECTION PopRegister(int idx) {
   int top = g_blit_regs[BLIT_REG_STACK_ADDR] - 1;
   SetRegister(idx, ReadBlitterBank(top));
   SetRegister(BLIT_REG_STACK_ADDR, top);
+  MCycle(1);
 }
 
 static void STRIPED_SECTION MoveRegister(int dest, int source) {
