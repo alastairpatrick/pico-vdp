@@ -81,7 +81,7 @@ enum {
 // 00010sss - PUSH sss
 // 00011ddd - POP ddd
 // 0010ssdd - MOVE ss, dd
-// 001110nn - SWAP nn
+// 00111111 - SWAP
 // 01xxxxxx - Blit operation, destination COLORS register
 // 10xxxxxx - Blit operation, destination display bank
 // 11xxxxxx - Blit operation, destination blitter bank
@@ -91,7 +91,7 @@ typedef enum {
   OPCODE_POP        = 0x18,
   OPCODE_MOVE       = 0x20,
   OPCODE_NOP        = 0x20,   // MOVE R0, R0
-  OPCODE_SWAP       = 0x38,
+  OPCODE_SWAP       = 0x3F,
   OPCODE_BLIT_BASE  = 0x40,
 
   OPCODE_DSAMPLE    = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_COLORS  | BLIT_OP_TOPY_PLAN,                                                          // 0x48
@@ -462,8 +462,10 @@ static uint32_t STRIPED_SECTION ParallelSubSat(uint32_t a8, uint32_t b8) {
 
 #pragma GCC pop_options
 
-static void STRIPED_SECTION DoSwap(SwapMode mode) {
+static void STRIPED_SECTION DoSwap() {
   int line_idx = g_blit_regs[BLIT_REG_COUNT] & 0xFF;
+  SwapMode mode = (SwapMode) ((g_blit_regs[BLIT_REG_COUNT] >> 8) & SWAP_MASK);
+
   SwapBanks(mode, line_idx);
 
   while (IsSwapPending()) {
@@ -509,7 +511,7 @@ void STRIPED_SECTION BlitMain() {
       MoveRegister(opcode & 0x3, (opcode & 0xC0) >> 2);
     } else if (opcode < OPCODE_BLIT_BASE) {
       // Do SWAP
-      DoSwap((SwapMode) (opcode & SWAP_MASK));
+      DoSwap();
     } else {
       if ((opcode & BLIT_OP_SRC) == BLIT_OP_SRC_ZERO) {
         DoBlitSrcZero(opcode);
