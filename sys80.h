@@ -61,7 +61,7 @@ typedef struct {
       uint16_t pad3[31];
 
       // Blitter range $Cx
-      uint32_t blit[8];              // $C0
+      uint16_t blit_sync;            // $C0
     };
     uint16_t ro_bytes[128];
   };

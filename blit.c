@@ -243,8 +243,9 @@ static void STRIPED_SECTION SetRegister(int idx, int data) {
   idx &= (NUM_BLIT_REGS-1);  
   g_blit_regs[idx] = data;
 
-  // Read only view for CPU.
-  g_sys80_regs.blit[idx] = Swizzle16BitSys80Reg(data);
+  if (idx == BLIT_REG_SYNC) {
+    g_sys80_regs.blit_sync = data & 0xFF;
+  }
 }
 
 static void STRIPED_SECTION PushRegister(int idx) {
