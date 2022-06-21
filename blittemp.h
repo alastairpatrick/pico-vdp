@@ -107,8 +107,7 @@ static void STRIPED_SECTION FUNC_NAME(Opcode opcode) {
 
       ++dest_y;
       if (dest_y == height) {
-        //EnableXIPCache();
-        return;
+        break;;
       }
 
       if (dest_planar) {
@@ -188,6 +187,25 @@ static void STRIPED_SECTION FUNC_NAME(Opcode opcode) {
         MCycle(iteration_cycles);
       }
     }
-
   }
+
+  switch (opcode & BLIT_OP_SRC) {
+  case BLIT_OP_SRC_DISPLAY:
+    g_blit_regs[BLIT_REG_SRC_ADDR] = src_daddr;
+    break;
+  case BLIT_OP_SRC_BLITTER:
+    g_blit_regs[BLIT_REG_SRC_ADDR] = src_baddr_byte / 4;
+    break;
+  }
+
+  switch (opcode & BLIT_OP_DEST) {
+  case BLIT_OP_DEST_DISPLAY:
+    g_blit_regs[BLIT_REG_DEST_ADDR] = dest_daddr;
+    break;
+  case BLIT_OP_DEST_BLITTER:
+    g_blit_regs[BLIT_REG_DEST_ADDR] = dest_baddr;
+    break;
+  }
+
+  //EnableXIPCache();
 }
