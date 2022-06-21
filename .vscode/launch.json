@@ -2,9 +2,9 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Cortex Debug",
+            "name": "Debug Firmware",
             "cwd": "${workspaceRoot}",
-            "executable": "${workspaceRoot}/build/pico-vdp.elf",
+            "executable": "${workspaceRoot}/build/firmware/firmware.elf",
             "request": "launch",
             "type": "cortex-debug",
             "servertype": "openocd",
