@@ -41,21 +41,21 @@ _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
 _REG_START_LINE         .EQU    $24
 
-_BCMD_BSTREAM           .EQU    $F0
-_BCMD_DCLEAR            .EQU    $A4
-_BCMD_DDCOPY            .EQU    $8A
-_BCMD_DSTREAM           .EQU    $B0
-_BCMD_IMAGE             .EQU    $9F
-_BCMD_NOP               .EQU    $20
-_BCMD_RECT              .EQU    $AC
-_BCMD_SET_COUNT         .EQU    $04
-_BCMD_SET_CLIP          .EQU    $07
-_BCMD_SET_COLORS        .EQU    $06
+_BCMD_BSTREAM           .EQU    $D0
+_BCMD_DCLEAR            .EQU    $84
+_BCMD_DDCOPY            .EQU    $AA
+_BCMD_DSTREAM           .EQU    $90
+_BCMD_IMAGE             .EQU    $BF
+_BCMD_NOP               .EQU    $1F
+_BCMD_RECT              .EQU    $8C
+_BCMD_SET_COUNT         .EQU    $03
+_BCMD_SET_CLIP          .EQU    $06
+_BCMD_SET_COLORS        .EQU    $05
 _BCMD_SET_DST_ADDR      .EQU    $00
 _BCMD_SET_SRC_ADDR      .EQU    $01
-_BCMD_SET_DPITCH        .EQU    $08
-_BCMD_SET_FLAGS         .EQU    $05
-_BCMD_SET_GUARD         .EQU    $09
+_BCMD_SET_DPITCH        .EQU    $0A
+_BCMD_SET_FLAGS         .EQU    $04
+_BCMD_SET_GUARD         .EQU    $0D
 
 
 _FONT_SIZE              .EQU    $800

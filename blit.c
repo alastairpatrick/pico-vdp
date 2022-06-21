@@ -47,13 +47,14 @@ enum {
   BLIT_REG_DEST_ADDR      = 0,  // Destination address
   BLIT_REG_SRC_ADDR       = 1,  // Source address
   BLIT_REG_STACK_ADDR     = 2,  // Top of stack in blitter bank
-  BLIT_REG_COUNT          = 4,  // Iteration count or count pair.
-  BLIT_REG_FLAGS          = 5,  // Miscellaneous flags.
-  BLIT_REG_COLORS         = 6,  // Array of colors.
-  BLIT_REG_CLIP           = 7,  // Left side of unclipped area.
-  BLIT_REG_PITCH          = 8,  // Offset added to display address.
-  BLIT_REG_GUARD          = 9,  // 2KB display bank pages that are read-only.
-  BLIT_REG_SYNC           = 15, // Does not affect blitter.
+  BLIT_REG_COUNT          = 3,  // Iteration count or count pair.
+  BLIT_REG_FLAGS          = 4,  // Miscellaneous flags.
+  BLIT_REG_COLORS         = 5,  // Array of colors.
+  BLIT_REG_CLIP           = 6,  // Left side of unclipped area.
+  BLIT_REG_TEMP           = 7,
+  BLIT_REG_PITCH          = 10,  // Offset added to display address.
+  BLIT_REG_GUARD          = 13, // 2KB display bank pages that are read-only.
+  BLIT_REG_SYNC           = 14, // Does not affect blitter.
 };
 
 enum {
@@ -66,10 +67,10 @@ enum {
   BLIT_OP_TOPY_LIN        = 0x00,
 
   BLIT_OP_SRC             = 0x30,
-  BLIT_OP_SRC_DISPLAY     = 0x00,
-  BLIT_OP_SRC_BLITTER     = 0x10,
-  BLIT_OP_SRC_ZERO        = 0x20,
-  BLIT_OP_SRC_STREAM      = 0x30,
+  BLIT_OP_SRC_ZERO        = 0x00,
+  BLIT_OP_SRC_STREAM      = 0x10,
+  BLIT_OP_SRC_DISPLAY     = 0x20,
+  BLIT_OP_SRC_BLITTER     = 0x30,
 
   BLIT_OP_DEST            = 0xC0,
   BLIT_OP_DEST_COLORS     = 0x40,
@@ -77,31 +78,38 @@ enum {
   BLIT_OP_DEST_BLITTER    = 0xC0,
 };
 
-// 0000dddd - SET dddd, #imm
-// 00010sss - PUSH sss
-// 00011ddd - POP ddd
-// 0010ssdd - MOVE ss, dd
-// 00111111 - SWAP
-// 01xxxxxx - Blit operation, destination COLORS register
+// 0000dddd - MOV d, #imm
+// 0001dddd - MOV d, T        d < 15
+// 00011111 - NOP
+// 0010ssss - MOV T, s        s < 15
+// 00101111 - SWAP
+// 0011ssdd - MOV d, s        d != s
+// 0100bbaa - EX a, b         a != b
+// 01010sss - PUSH s
+// 01011ddd - POP d
+// 011xxxxx - Blit operation, destination COLORS register
 // 10xxxxxx - Blit operation, destination display bank
 // 11xxxxxx - Blit operation, destination blitter bank
 typedef enum {
-  OPCODE_SET        = 0x00,
-  OPCODE_PUSH       = 0x10,
-  OPCODE_POP        = 0x18,
-  OPCODE_MOVE       = 0x20,
-  OPCODE_NOP        = 0x20,   // MOVE R0, R0
-  OPCODE_SWAP       = 0x3F,
-  OPCODE_BLIT_BASE  = 0x40,
+  OPCODE_MOV_DI     = 0x00,
+  OPCODE_MOV_DT     = 0x10,
+  OPCODE_NOP        = 0x1F,
+  OPCODE_MOV_TS     = 0x20,
+  OPCODE_SWAP       = 0x2F,
+  OPCODE_MOV_DS     = 0x30,
+  OPCODE_EX         = 0x40,
+  OPCODE_PUSH_S     = 0x50,
+  OPCODE_POP_D      = 0x54,
+  OPCODE_BLIT_BASE  = 0x60,
 
-  OPCODE_DSAMPLE    = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_COLORS  | BLIT_OP_TOPY_PLAN,                                                          // 0x48
+  OPCODE_DSAMPLE    = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_COLORS  | BLIT_OP_TOPY_PLAN,                                                          // 0x68
 
-  OPCODE_DCLEAR     = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_COLOR_EN,  // 0xA4
-  OPCODE_DDCOPY     = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                     // 0x8A
-  OPCODE_DSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                           // 0xB0
-  OPCODE_BSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                           // 0xF0
-  OPCODE_RECT       = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_COLOR_EN,  // 0xAC
-  OPCODE_IMAGE      = BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_COLOR_EN,  // 0x9F
+  OPCODE_DCLEAR     = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN                                       | BLIT_OP_COLOR_EN,  // 0x84
+  OPCODE_DDCOPY     = BLIT_OP_SRC_DISPLAY | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                    BLIT_OP_CLIP_EN,                     // 0xAA
+  OPCODE_DSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_LIN,                                                           // 0x90
+  OPCODE_BSTREAM    = BLIT_OP_SRC_STREAM  | BLIT_OP_DEST_BLITTER | BLIT_OP_TOPY_LIN,                                                           // 0xD0
+  OPCODE_RECT       = BLIT_OP_SRC_ZERO    | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN |                                      BLIT_OP_COLOR_EN,  // 0x8C
+  OPCODE_IMAGE      = BLIT_OP_SRC_BLITTER | BLIT_OP_DEST_DISPLAY | BLIT_OP_TOPY_PLAN | BLIT_OP_FLAGS_EN | BLIT_OP_CLIP_EN | BLIT_OP_COLOR_EN,  // 0xBF
 } Opcode;
 
 typedef struct {
@@ -498,26 +506,49 @@ void STRIPED_SECTION BlitMain() {
     Opcode opcode = (Opcode) PopCmdFifo(8);
     MCycle(1);
 
-    if (opcode < OPCODE_PUSH) {
-      SetRegister(opcode, PopCmdFifo(16));
-    } else if (opcode < OPCODE_POP) {
-      // Do PUSH
-      PushRegister(opcode & 0x7);
-    } else if (opcode < OPCODE_MOVE) {
-      // Do POP
-      PopRegister(opcode & 0x7);
-    } else if (opcode < OPCODE_SWAP) {
-      // Do MOVE
-      MoveRegister(opcode & 0x3, (opcode & 0xC0) >> 2);
-    } else if (opcode < OPCODE_BLIT_BASE) {
-      // Do SWAP
-      DoSwap();
-    } else {
+    if (opcode >= OPCODE_BLIT_BASE) {
       if ((opcode & BLIT_OP_SRC) == BLIT_OP_SRC_ZERO) {
         DoBlitSrcZero(opcode);
       } else {
         DoBlit(opcode);
       }
+
+      continue;
+    }
+
+    switch (opcode >> 4) {
+    case OPCODE_MOV_DI >> 4:
+      SetRegister(opcode, PopCmdFifo(16));
+      break;
+    case OPCODE_MOV_DT >> 4:
+      SetRegister(opcode, g_blit_regs[BLIT_REG_TEMP]);
+      break;
+    case OPCODE_MOV_TS >> 4:
+      if (opcode == OPCODE_SWAP) {
+        DoSwap();
+      } else {
+        SetRegister(BLIT_REG_TEMP, GetRegister(opcode));
+      }
+      break;
+    case OPCODE_MOV_DS >> 4:
+      SetRegister(opcode & 0x3, GetRegister(opcode >> 2));
+      break;
+    case OPCODE_EX >> 4: {
+      int a_idx = opcode & 0x3;
+      int b_idx = (opcode >> 2) & 0x3;
+      int a = GetRegister(a_idx);
+      int b = GetRegister(b_idx);
+      SetRegister(a_idx, b);
+      SetRegister(b_idx, a);
+      break;
+    }
+    case OPCODE_PUSH_S >> 4:
+      if (opcode < OPCODE_POP_D) {
+        PushRegister(opcode & 0x7);
+      } else {
+        PopRegister(opcode & 0x7);
+      }
+      break;
     }
   }
 }
