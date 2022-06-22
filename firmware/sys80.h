@@ -27,11 +27,11 @@ typedef struct {
 
       // Video generator range $2x, $3x
       uint16_t lines_page;           // $20
-      uint16_t font_page;            // $21
-      uint16_t border_rgb;           // $22
-      uint16_t border_left: 4;       // $23
+      uint16_t start_line;           // $21
+      uint16_t wrap_line;            // $22
+      uint16_t border_rgb;           // $23
+      uint16_t border_left: 4;       // $24
       uint16_t border_right: 4;
-      uint16_t start_line;           // $24
       uint16_t pad[6];
       uint16_t sprite_x;             // $2B
       uint16_t sprite_y;             // $2C

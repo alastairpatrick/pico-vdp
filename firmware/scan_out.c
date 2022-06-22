@@ -23,7 +23,7 @@ static DisplayBank* g_scan_bank = &g_display_bank_a;
 static DisplayBank* volatile g_blit_bank = &g_display_bank_a;
 static volatile bool g_swap_pending;
 static volatile SwapMode g_swap_mode;
-static int g_start_line;
+static uint8_t g_current_line;
 
 volatile bool g_display_blit_clock_enabled;
 static bool g_lines_enabled;
@@ -217,7 +217,7 @@ void SCAN_OUT_INNER_SECTION ScanOutSprite(uint8_t* dest, int width, int y) {
 #pragma GCC pop_options
 
 void STRIPED_SECTION ScanOutBeginDisplay() {
-  g_start_line = g_sys80_regs.start_line;
+  g_current_line = g_sys80_regs.start_line;
 
   if (g_swap_pending) {
     switch (g_swap_mode) {
@@ -250,10 +250,14 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   g_sys80_regs.current_y = y;
 
+  if (g_current_line == g_sys80_regs.wrap_line) {
+    g_current_line = 0;
+  }
+
   if (g_lines_enabled) {
     const int max_lines = 256;
     int lines_high = (g_sys80_regs.lines_page & DISPLAY_PAGE_MASK) * DISPLAY_PAGE_SIZE;
-    int lines_low = ((g_start_line + y) & 0xFF) * 2;
+    int lines_low = g_current_line * 2;
     ScanLine* line = g_scan_bank->lines + (lines_high | lines_low) / 2;
 
     if (line->display_mode_en) {
@@ -334,6 +338,8 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 
   memset(dest, border_rgb, border_left);
   memset(dest + width - border_right, border_rgb, border_right);
+
+  ++g_current_line;
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {

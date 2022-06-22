@@ -29,7 +29,6 @@ _PORT_RDAT              .EQU    $B0
 _PORT_BLIT              .EQU    $B2
 
 _REG_FIFO_WRAP          .EQU    $40
-_REG_FONT_PG            .EQU    $21
 _REG_LEDS               .EQU    $1F
 _REG_LINES_PG           .EQU    $20
 _REG_KEY_ROWS           .EQU    $80
@@ -39,7 +38,7 @@ _REG_SPRITE_PRD         .EQU    $2D
 _REG_SPRITE_RGB         .EQU    $2F
 _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
-_REG_START_LINE         .EQU    $24
+_REG_START_LINE         .EQU    $21
 
 _BCMD_BSTREAM           .EQU    $D0
 _BCMD_DCLEAR            .EQU    $84
