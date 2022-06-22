@@ -251,7 +251,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   g_sys80_regs.current_y = y;
 
   if (g_current_line == g_sys80_regs.wrap_line) {
-    g_current_line = 0;
+    g_current_line = g_sys80_regs.reset_line;
   }
 
   if (g_lines_enabled) {

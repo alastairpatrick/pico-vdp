@@ -38,8 +38,8 @@ _REG_SPRITE_PRD         .EQU    $2D
 _REG_SPRITE_RGB         .EQU    $2F
 _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
-_REG_START_LINE         .EQU    $21
-_REG_WRAP_LINE          .EQU    $22
+_REG_START_LINE         .EQU    $22
+_REG_WRAP_LINE          .EQU    $23
 
 _BCMD_BSTREAM           .EQU    $D0
 _BCMD_DCLEAR            .EQU    $84
