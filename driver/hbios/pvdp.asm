@@ -39,6 +39,7 @@ _REG_SPRITE_RGB         .EQU    $2F
 _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
 _REG_START_LINE         .EQU    $21
+_REG_WRAP_LINE          .EQU    $22
 
 _BCMD_BSTREAM           .EQU    $D0
 _BCMD_DCLEAR            .EQU    $84
@@ -170,11 +171,21 @@ PVDP_RESET:
         LD      BC, _PALETTE_END - _PALETTE
         LD      A, _BCMD_DSTREAM
         CALL    _BLIT_COPY
-
+        
         ; Lines start in page 12
         LD      C, _REG_LINES_PG
         LD      D, 12
         CALL    _SET_REG_D
+        
+        ; Line wraps back to 0 at 192
+        LD      C, _REG_WRAP_LINE
+        LD      D, 192
+        CALL    _SET_REG_D
+
+        ; Initialize LINE_START
+        XOR     A
+        LD      (_SCROLL), A
+        CALL    _UPDATE_LINE_START
 
         ; Initialize cursor sprite
         LD      D, 60
@@ -245,9 +256,7 @@ _INIT_LINES:
         LD      C, _BCMD_DSTREAM
         CALL    _BLIT_CMD
 
-        LD      A, (_SCROLL)    ; HL = _SCROLL * _SCAN_WORDS * 8
-        LD      H, A
-        LD      L, 0
+        LD      HL, 0
         LD      B, _SCAN_LINES
 _LINE_LOOP:
         CALL    _BLIT_SYNC
@@ -329,6 +338,22 @@ _COPY_FONT:
 #ENDIF
 
         POP     HL
+        POP     DE
+        POP     BC
+        RET
+
+_UPDATE_LINE_START:
+        PUSH    BC
+        PUSH    DE
+
+        LD      C, _REG_START_LINE
+        LD      A, (_SCROLL)
+        SLA     A
+        SLA     A
+        SLA     A
+        LD      D, A
+        CALL    _SET_REG_D
+
         POP     DE
         POP     BC
         RET
@@ -800,7 +825,7 @@ _BACKWARD_LOOP:
 
 _SCROLL_DONE:
 
-        CALL    _INIT_LINES
+        CALL    _UPDATE_LINE_START
         CALL    _INIT_BLIT_REGS
         CALL    _BLIT_FLUSH
 
