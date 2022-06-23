@@ -1228,41 +1228,47 @@ _SET_REG_E:
 _BLIT_SYNC:
         IN      A, (_PORT_BLIT)
         AND     A
-        JR      Z, _BLIT_SYNC
-        RET
+        RET     NZ
+        JR      _BLIT_SYNC
 
 _BLIT_CMD:
-        CALL    _BLIT_SYNC
+        IN      A, (_PORT_BLIT)
+        AND     A
+        JR      Z, _BLIT_CMD
         LD      A, C
         OUT     (_PORT_BLIT), A
         RET
 
 _BLIT_CMD_D:
-        CALL    _BLIT_SYNC
+        IN      A, (_PORT_BLIT)
+        AND     A
+        JR      Z, _BLIT_CMD_D
         LD      A, C
-        OUT     (_PORT_BLIT), A
-        LD      A, D
-        OUT     (_PORT_BLIT), A
+        LD      C, _PORT_BLIT
+        OUT     (C), A
+        OUT     (C), D
         RET
 
 _BLIT_CMD_DE:
-        CALL    _BLIT_SYNC
+        IN      A, (_PORT_BLIT)
+        AND     A
+        JR      Z, _BLIT_CMD_DE
         LD      A, C
-        OUT     (_PORT_BLIT), A
-        LD      A, E
-        OUT     (_PORT_BLIT), A
-        LD      A, D
-        OUT     (_PORT_BLIT), A
+        LD      C, _PORT_BLIT
+        OUT     (C), A
+        OUT     (C), E
+        OUT     (C), D
         RET
 
 _BLIT_CMD_HL:
-        CALL    _BLIT_SYNC
+        IN      A, (_PORT_BLIT)
+        AND     A
+        JR      Z, _BLIT_CMD_HL
         LD      A, C
-        OUT     (_PORT_BLIT), A
-        LD      A, L
-        OUT     (_PORT_BLIT), A
-        LD      A, H
-        OUT     (_PORT_BLIT), A
+        LD      C, _PORT_BLIT
+        OUT     (C), A
+        OUT     (C), L
+        OUT     (C), H
         RET
 
 ; Entry:
