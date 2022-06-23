@@ -32,7 +32,6 @@ static int g_pixels_addr;
 static DisplayMode g_display_mode;
 
 static int g_x_shift;
-static int g_sprite_cycle;
 
 static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
   0b00000000,
@@ -240,10 +239,6 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
     g_swap_pending = false;
   }
 
-  if (++g_sprite_cycle >= g_sys80_regs.sprite_period) {
-    g_sprite_cycle = 0;
-  }
-
   g_lines_enabled = true;
 }
 
@@ -322,11 +317,9 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
       break;
   }
 
-  if (g_sprite_cycle <= g_sys80_regs.sprite_duty) {
-    int sprite_y = g_sys80_regs.sprite_y;
-    if (y >= sprite_y && y < sprite_y + 8) {
-      ScanOutSprite(dest + g_x_shift, width, y - sprite_y);
-    }
+  int sprite_y = g_sys80_regs.sprite_y;
+  if (y >= sprite_y && y < sprite_y + 8) {
+    ScanOutSprite(dest + g_x_shift, width, y - sprite_y);
   }
 
   for (int i = 0; i < g_x_shift; ++i) {

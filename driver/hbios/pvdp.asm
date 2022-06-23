@@ -18,6 +18,7 @@ TERMENABLE      	.SET	TRUE
 _WIDTH                  .EQU    42              ; 42, 64 or 80
 _KEY_BUF_SIZE           .EQU    16
 _ENABLE_FIFO            .EQU    1
+_CURSOR_BLINK_PERIOD    .EQU    8
 
 ; Not configuration
 _HEIGHT                 .EQU    24
@@ -33,8 +34,6 @@ _REG_LEDS               .EQU    $08
 _REG_LINES_PG           .EQU    $20
 _REG_KEY_ROWS           .EQU    $80
 _REG_SPRITE_BM          .EQU    $30
-_REG_SPRITE_DUT         .EQU    $2E
-_REG_SPRITE_PRD         .EQU    $2D
 _REG_SPRITE_RGB         .EQU    $2F
 _REG_SPRITE_X           .EQU    $2B
 _REG_SPRITE_Y           .EQU    $2C
@@ -188,12 +187,6 @@ PVDP_RESET:
         CALL    _UPDATE_LINE_START
 
         ; Initialize cursor sprite
-        LD      D, 60
-        LD      C, _REG_SPRITE_PRD
-        CALL    _SET_REG_D
-        LD      D, 30
-        LD      C, _REG_SPRITE_DUT
-        CALL    _SET_REG_D
         LD      D, $FF
         LD      C, _REG_SPRITE_RGB
         CALL    _SET_REG_D
@@ -514,47 +507,9 @@ _SET_CURSOR_LINE:
 
 PVDP_SET_CURSOR_POS:
         LD      (_POS), DE
-        CALL    _UPDATE_SPRITE
         XOR     A
         RET
 
-_UPDATE_SPRITE:
-        PUSH    BC
-        PUSH    DE
-        
-        LD      DE, (_POS)
-
-        ; SPRITE_Y = row*8
-        SLA     D
-        SLA     D
-        SLA     D
-        LD      C, _REG_SPRITE_Y
-        CALL    _SET_REG_D
-
-#IF (_WIDTH == 80) | (_WIDTH == 42)
-        ; SPRITE_X = col*3+8 or SPRITE_X = col*6
-        LD      A, E
-        ADD     A, E
-        ADD     A, E
-#IF (_WIDTH == 42)
-        SLA     A
-#ELSE
-        ADD     A, 8
-#ENDIF
-        LD      D, A
-#ELSE
-        ; SPRITE_X = col*4
-        SLA     E
-        SLA     E
-        LD      D, E
-#ENDIF
-
-        LD      C, _REG_SPRITE_X
-        CALL    _SET_REG_D
-
-        POP     DE
-        POP     BC
-        RET
 
 ; Entry:
 ;  E: Character Attribute
@@ -623,7 +578,6 @@ PVDP_SET_CHAR_COLOR:
 
 PVDP_WRITE_CHAR:
         CALL    _WRITE_CHAR
-        CALL    _UPDATE_SPRITE
         CALL    _BLIT_FLUSH
         XOR     A
         RET
@@ -724,7 +678,6 @@ _FILL_TEST:
         OR      L
         JR      NZ, _FILL_LOOP
 
-        CALL    _UPDATE_SPRITE
         CALL    _BLIT_FLUSH
 
         POP     HL
@@ -759,7 +712,6 @@ _COPY_LOOP
 _COPY_NO_WRAP:
         DJNZ    _COPY_LOOP
 
-        CALL    _UPDATE_SPRITE
         CALL    _BLIT_FLUSH
 
         POP     DE
@@ -926,6 +878,7 @@ PVDP_KEYBOARD_READ:
         PUSH    HL
 
         ; Keep scanning until a key is available in the buffer
+        LD      HL, -_CURSOR_BLINK_PERIOD
 _KEYBOARD_READ_EMPTY:
         CALL    _GET_MODIFIER_KEYS
         CALL    _SCAN_ROWS
@@ -934,7 +887,22 @@ _KEYBOARD_READ_EMPTY:
         LD      E, A
         LD      A, (_KEY_BUF_END)
         CP      E
-        JR      Z, _KEYBOARD_READ_EMPTY
+        JR      NZ, _KEYBOARD_READ_NOT_EMPTY
+
+        LD      DE, _CURSOR_BLINK_PERIOD
+        ADD     HL, DE
+        LD      A, H
+        AND     A
+        JP      M, _CURSOR_HIDDEN
+
+        CALL    _SHOW_CURSOR
+        JR      _KEYBOARD_READ_EMPTY
+
+_CURSOR_HIDDEN:
+        CALL    _HIDE_CURSOR
+        JR      _KEYBOARD_READ_EMPTY
+
+_KEYBOARD_READ_NOT_EMPTY:
 
         ; Advance buffer begin pointer
         LD      HL, _KEY_BUF
@@ -952,8 +920,60 @@ _KEYBOARD_READ_EMPTY:
         INC     HL
         LD      C, (HL)
 
+        CALL    _HIDE_CURSOR
+
         XOR     A
         POP     HL
+        RET
+
+_SHOW_CURSOR:
+        PUSH    BC
+        PUSH    DE
+        
+        LD      DE, (_POS)
+
+        ; SPRITE_Y = row*8
+        SLA     D
+        SLA     D
+        SLA     D
+        LD      C, _REG_SPRITE_Y
+        CALL    _SET_REG_D
+
+#IF (_WIDTH == 80) | (_WIDTH == 42)
+        ; SPRITE_X = col*3+8 or SPRITE_X = col*6
+        LD      A, E
+        ADD     A, E
+        ADD     A, E
+#IF (_WIDTH == 42)
+        SLA     A
+#ELSE
+        ADD     A, 8
+#ENDIF
+        LD      D, A
+#ELSE
+        ; SPRITE_X = col*4
+        SLA     E
+        SLA     E
+        LD      D, E
+#ENDIF
+
+        LD      C, _REG_SPRITE_X
+        CALL    _SET_REG_D
+
+        POP     DE
+        POP     BC
+        RET
+
+_HIDE_CURSOR:
+        PUSH    BC
+        PUSH    DE
+
+        LD      D, 255
+        LD      C, _REG_SPRITE_Y
+        CALL    _SET_REG_D
+
+        POP     DE
+        POP     BC
         RET
 
 _GET_MODIFIER_KEYS:

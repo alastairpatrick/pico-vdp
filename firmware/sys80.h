@@ -36,8 +36,7 @@ typedef struct {
       uint16_t pad[5];
       uint16_t sprite_x;             // $2B
       uint16_t sprite_y;             // $2C
-      uint16_t sprite_period;        // $2D
-      uint16_t sprite_duty;          // $2E
+      uint16_t pad4[2];
       uint16_t sprite_rgb;           // $2F
       uint16_t sprite_bitmap[16];    // $30
 
