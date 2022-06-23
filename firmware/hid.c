@@ -108,7 +108,7 @@ static void ProcessGenericReport(uint8_t dev_addr, uint8_t instance, uint8_t con
 }
 
 static void UpdateLEDs() {
-  int leds = g_sys80_regs.leds;
+  int leds = g_sys80_regs.ay[0][8].value;
   uint8_t led_state = 0;
   if (leds & LED_CAPS_LOCK_MASK) {
     led_state |= KEYBOARD_LED_CAPSLOCK;

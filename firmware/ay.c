@@ -1,20 +1,9 @@
+#include <string.h>
 #include "hardware/structs/rosc.h"
 
+#include "ay.h"
+
 #include "sys80.h"
-
-#define NUM_TONES 3
-
-typedef struct {
-  int64_t reset_time;
-  bool state;
-} Tone;
-
-static int64_t g_time;
-static int64_t g_noise_reset_time;
-static bool g_noise_state;
-static Tone g_tones[NUM_TONES];
-static int64_t g_env_reset_time;
-static int g_env_pos;
 
 #pragma GCC optimize("O3")
 
@@ -34,75 +23,77 @@ int16_t g_vol_table[32] = {
 
 static int g_envelopes[16][128];
 
-static bool STRIPED_SECTION AdvanceTime(int64_t* reset_time, int64_t period) {
-  if (*reset_time + period <= g_time) {
+static bool STRIPED_SECTION AdvanceTime(const AYState* state, int64_t* reset_time, int64_t period) {
+  if (*reset_time + period <= state->time) {
     *reset_time += period;
-    if (*reset_time + period <= g_time) {
-      *reset_time = g_time;
+    if (*reset_time + period <= state->time) {
+      *reset_time = state->time;
     }
     return true;
   }
   return false;
 }
 
-int STRIPED_SECTION GenerateAY(int volume) {
+int STRIPED_SECTION GenerateAY(AYState* state, volatile TrackedSys80Reg* regs) {
   // All periods are a multiple of 16 cycles so only need to recalculate every 16 cycles.
-  g_time += 16;
+  state->time += 16;
 
   // Noise generator
-  int noise_period = ((g_sys80_regs.ay[6].value & 0x1F) << 4);
-  if (AdvanceTime(&g_noise_reset_time, noise_period)) {
-    g_noise_state = rosc_hw->randombit;
+  int noise_period = ((regs[6].value & 0x1F) << 4);
+  if (AdvanceTime(state, &state->noise_reset_time, noise_period)) {
+    state->noise_state = rosc_hw->randombit;
   }
 
   // Envelope generator
-  int env_period = ((g_sys80_regs.ay[13].value << 8) + (g_sys80_regs.ay[14].value << 16));
-  if (AdvanceTime(&g_env_reset_time, env_period)) {
-    if (++g_env_pos >= 128) {
-      g_env_pos = 64;
+  int env_period = ((regs[13].value << 8) + (regs[14].value << 16));
+  if (AdvanceTime(state, &state->env_reset_time, env_period)) {
+    if (++state->env_pos >= 128) {
+      state->env_pos = 64;
     }
   }
 
   // Envelope generator reset on write to R15.
-  if (g_sys80_regs.ay[15].track == 0) {
-    g_sys80_regs.ay[15].track = 1;
-    g_env_pos = 0;
-    g_env_reset_time = g_time;
+  if (regs[15].track == 0) {
+    regs[15].track = 1;
+    state->env_pos = 0;
+    state->env_reset_time = state->time;
   }
 
   // Tone enables in bits 0-2
   // Noise enables in bits 3-5
-  int enables = g_sys80_regs.ay[7].value;
+  int enables = regs[7].value;
 
   int mix = 0;
-  for (int j = 0; j < NUM_TONES; ++j) {
+  for (int j = 0; j < count_of(state->tones); ++j) {
     // Tone generator
-    Tone* tone = &g_tones[j];
-    int period = ((g_sys80_regs.ay[j*2].value << 4) + ((g_sys80_regs.ay[j*2 + 1].value & 0x0F) << 12));
-    if (AdvanceTime(&tone->reset_time, period)) {
+    AYTone* tone = &state->tones[j];
+    int period = ((regs[j*2].value << 4) + ((regs[j*2 + 1].value & 0x0F) << 12));
+    if (AdvanceTime(state, &tone->reset_time, period)) {
       tone->state = !tone->state;
     }
 
-    int amplitude = g_sys80_regs.ay[j + 10].value & 0x1F;
+    int amplitude = regs[j + 10].value & 0x1F;
     if (amplitude & 0x10) {
-      int env_style = g_sys80_regs.ay[15].value & 0xF;
-      amplitude = g_envelopes[env_style][g_env_pos];
+      int env_style = regs[15].value & 0xF;
+      amplitude = g_envelopes[env_style][state->env_pos];
     } else {
       amplitude = amplitude * 2 + 1;
     }
 
     bool tone_disable = (enables >> j) & 0x1;
     bool noise_disable = (enables >> (j+3)) & 0x1;
-    if ((tone->state || tone_disable) && (g_noise_state || noise_disable)) {
+    if ((tone->state || tone_disable) && (state->noise_state || noise_disable)) {
       mix += g_vol_table[amplitude];
     }
   }
 
-  return (mix * volume) >> 16;
+  return mix;
 }
 
 
-void InitAY() {
+void InitAY(AYState* state) {
+  memset(state, 0, sizeof(*state));
+
   for (int i = 4; i < 32; ++i) {
     g_vol_table[i] = (i * 21845) / 31;
   }

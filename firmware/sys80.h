@@ -14,16 +14,16 @@ enum {
 };
 
 typedef struct {
+  uint8_t value;
+  uint8_t track;
+} TrackedSys80Reg;
+
+typedef struct {
   // Read-write registers
   union {
     struct {
       // Audio / PIO range $0x, $1x
-      struct {
-        uint8_t value;
-        uint8_t track;
-      } ay[16];
-      uint16_t pad4[15];
-      uint16_t leds;                 // $1F
+      TrackedSys80Reg ay[2][16];
 
       // Video generator range $2x, $3x
       uint16_t lines_page;           // $20

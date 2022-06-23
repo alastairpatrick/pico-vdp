@@ -21,9 +21,9 @@ void ScanMain() {
   InitPerf();
   tusb_init();
 
-#if PICOVDP_ENABLE_AUDIO
-  InitAudio();
-#endif
+  if (PICOVDP_ENABLE_AUDIO) {
+    InitAudio();
+  }
 
   InitVideoInterrupts();
   StartVideo();  
@@ -48,6 +48,10 @@ int main() {
   SetVideoResolution(1, 2);
 
   InitSys80();
+
+  if (PICOVDP_ENABLE_AUDIO) {
+    InitAudio();
+  }
 
   multicore_launch_core1(ScanMain);
   BlitMain(); 

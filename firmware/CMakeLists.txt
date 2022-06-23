@@ -26,6 +26,7 @@ add_executable(firmware
 target_compile_definitions(firmware PRIVATE
   PICOVDP_OVERCLOCK=1
   PICOVDP_ENABLE_AUDIO=1
+  PICOVDP_ENABLE_DUAL_AUDIO=1
 )
 
 # Make sure TinyUSB can find tusb_config.h

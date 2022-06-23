@@ -3,30 +3,45 @@
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "hardware/pwm.h"
+#include "pico/multicore.h"
 
 #include "audio.h"
 
+#include "ay.h"
 #include "pins.h"
 #include "section.h"
-#include "sys80.h"
 
 #define AY_FREQ 1773400
 #define CYCLES_PER_SAMPLE 16
 #define SAMPLE_FREQ (AY_FREQ / CYCLES_PER_SAMPLE)
-#define SAMPLE_PWM 1
+#define BASE_SAMPLE_PWM 1  // BASE_SAMPLE_PWM+1 is also used for core 1
 
 static int g_pwm_slice, g_pwm_channel;
 static int g_volume = 128;
 
+static AYState g_ay_state[2];
+
+static volatile int g_secondary_level;
+
 void STRIPED_SECTION SampleISR() {
-  if (pwm_get_irq_status_mask() & (1 << SAMPLE_PWM)) {
-    pwm_clear_irq(SAMPLE_PWM);
-    int level = GenerateAY(g_volume);
-    pwm_set_chan_level(g_pwm_slice, g_pwm_channel, level);
+  int core_num = get_core_num();
+  int sample_pwm = BASE_SAMPLE_PWM + core_num;
+
+  if (pwm_get_irq_status_mask() & (1 << sample_pwm)) {
+    pwm_clear_irq(sample_pwm);
+
+    int level = GenerateAY(&g_ay_state[core_num], g_sys80_regs.ay[core_num]);
+
+    if (core_num == 0) {
+      level = ((level + g_secondary_level) * g_volume) >> 17;
+      pwm_set_chan_level(g_pwm_slice, g_pwm_channel, level);
+    } else {
+      g_secondary_level = level;
+    }
   }
 }
 
-static void InitPWM() {
+static void InitOutputPWM() {
   // This is the PWM slice connected to the GPIO.
   gpio_set_function(PWM_PIN, GPIO_FUNC_PWM);
 
@@ -37,23 +52,36 @@ static void InitPWM() {
   pwm_config_set_wrap(&cfg, 0xFF);
   pwm_config_set_phase_correct(&cfg, true);
   pwm_init(g_pwm_slice, &cfg, true);
+}
 
+static void InitSamplePWM(int core_num) {
   // This PWM slice is timed to assert a periodic interrupt at the sample frequency.
-  cfg = pwm_get_default_config();
-  pwm_config_set_wrap(&cfg, clock_get_hz(clk_sys) / SAMPLE_FREQ);
-  pwm_init(SAMPLE_PWM, &cfg, false);
+  int sample_pwm = BASE_SAMPLE_PWM + core_num;
 
-  pwm_set_irq_enabled(SAMPLE_PWM, true);
+  pwm_config cfg = pwm_get_default_config();
+  pwm_config_set_wrap(&cfg, clock_get_hz(clk_sys) / SAMPLE_FREQ);
+  pwm_init(sample_pwm, &cfg, false);
+
+  pwm_set_irq_enabled(sample_pwm, true);
   irq_set_exclusive_handler(PWM_IRQ_WRAP, SampleISR);
   irq_set_priority(PWM_IRQ_WRAP, 0x00);
+
   irq_set_enabled(PWM_IRQ_WRAP, true);
 
-  pwm_set_enabled(SAMPLE_PWM, true);
+  pwm_set_enabled(sample_pwm, true);
 }
 
 void InitAudio() {
-  InitAY();
-  InitPWM();
+  int core_num = get_core_num();
+
+  if (core_num == 0) {
+    InitOutputPWM();
+  }
+
+  if (PICOVDP_ENABLE_DUAL_AUDIO || core_num == 0) {
+    InitAY(&g_ay_state[core_num]);
+    InitSamplePWM(core_num);
+  }
 }
 
 void ChangeVolume(int delta) {

@@ -29,7 +29,7 @@ _PORT_RDAT              .EQU    $B0
 _PORT_BLIT              .EQU    $B2
 
 _REG_FIFO_WRAP          .EQU    $40
-_REG_LEDS               .EQU    $1F
+_REG_LEDS               .EQU    $08
 _REG_LINES_PG           .EQU    $20
 _REG_KEY_ROWS           .EQU    $80
 _REG_SPRITE_BM          .EQU    $30
