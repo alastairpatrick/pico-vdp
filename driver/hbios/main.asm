@@ -17,6 +17,9 @@ _LOOP1:
         CP      $09
         JR      Z, _MAIN_SCROLL_BACK
 
+        CP      $F8
+        JR      Z, _MAIN_SCROLL_REVERSE
+
         CP      $F7
         JR      Z, _MAIN_SCROLL_COPY
 
@@ -43,6 +46,11 @@ _MAIN_SCROLL_BACK:
         CALL    PVDP_SCROLL
         JR      _LOOP1
 
+_MAIN_SCROLL_REVERSE:
+        LD      E, $04
+        CALL    PVDP_SET_CHAR_ATTR
+        JR      _LOOP1
+        
 _MAIN_SCROLL_COPY:
         LD      DE, 0
         LD      L, 100

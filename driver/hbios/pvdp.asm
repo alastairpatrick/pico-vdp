@@ -517,7 +517,10 @@ PVDP_SET_CURSOR_POS:
 ;  A: 1
 
 PVDP_SET_CHAR_ATTR:
-        LD      A, 1
+        LD      A, E
+        LD      (_ATTRS), A
+        CALL    _UPDATE_COLORS
+        XOR     A
         RET
 
 
@@ -527,8 +530,26 @@ PVDP_SET_CHAR_ATTR:
 ;  A: 0
 
 PVDP_SET_CHAR_COLOR:
+        LD      A, E
+        LD      (_COLORS), A
+        CALL    _UPDATE_COLORS        
+        XOR     A
+        RET
+
+_UPDATE_COLORS:
         PUSH    BC
         PUSH    DE
+
+        LD      A, (_COLORS)
+        LD      E, A
+        LD      A, (_ATTRS)
+        AND     $04             ; reverse color?
+        JR      Z, _NO_REVERSE
+        RLC     E
+        RLC     E
+        RLC     E
+        RLC     E
+_NO_REVERSE:
 
 #IF (_WIDTH == 80) | (_WIDTH == 64)
         PUSH    IX
@@ -1376,6 +1397,8 @@ _KEY_BUF:               .FILL   _KEY_BUF_SIZE, 0
 
 _POS                    .DW     0
 _SCROLL                 .DB     0
+_COLORS                 .DB     0
+_ATTRS                  .DB     0
 
 ; ASCII codes >=E0 are assigned as in RomWBW Architecture doc.
 _ASCII_LOWER:           .DB     "01234567"                                      ; row 0
