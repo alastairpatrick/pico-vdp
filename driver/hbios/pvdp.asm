@@ -531,26 +531,32 @@ PVDP_SET_CHAR_COLOR:
         PUSH    DE
 
 #IF (_WIDTH == 80) | (_WIDTH == 64)
-        ; Reduce to 2-bit intensities in form FfFfBbBb
+        PUSH    IX
+        LD      IX, _4_COLOR_MAP
+
+        ; Map foreground color to 4 color mode
         LD      A, E
-        AND     $C0             ; mask Bb
-        RLC     A
-        RLC     A               ; 000000Bb
+        AND     $0F
+        LD      (_FG_IDX+2), A
+_FG_IDX:
+        LD      A, (IX+0)       ; self-modifying
+        AND     $F0
         LD      D, A
-        SLA     D
-        SLA     D               ; 0000Bb00
-        OR      D               ; 0000BbBb
-        LD      D, A
+
+        ; Map backgroudn color to 4 color mode 
         LD      A, E
-        AND     $0C             ; mask Ff
-        SLA     A
-        SLA     A               ; 00Ff0000
+        SRL     A
+        SRL     A
+        SRL     A
+        SRL     A
+        LD      (_BG_IDX+2), A
+_BG_IDX:
+        LD      A, (IX+0)
+        AND     $0F
+        OR      D
         LD      E, A
-        SLA     E
-        SLA     E               ; Ff000000
-        OR      E               ; FfFf0000
-        OR      D               ; FfFfBbBb
-        LD      E, A
+
+        POP     IX
 #ELSE
         ; Swap nibbles of E
         RLC     E
@@ -1412,8 +1418,8 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
 _PALETTE:
 #IF (_WIDTH == 80) | (_WIDTH == 64)
                         .DB     %00000000
-                        .DB     %10101101
                         .DB     %01010010
+                        .DB     %10101101
                         .DB     %11111111
 #ELSE
                         .DB     %00000000
@@ -1434,6 +1440,33 @@ _PALETTE:
                         .DB     %11111111
 #ENDIF
 _PALETTE_END:
+
+
+; Color mapping in 4 color modes
+; 0 (black)         -> 0 (black)
+; other             -> 1 (gray)
+; 7 (white)         -> 2 (white)
+; 15 (bright white) -> 3 (bright white)
+
+#IF (_WIDTH == 80) | (_WIDTH == 64)
+_4_COLOR_MAP:
+                        .DB     %00000000
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %10101010
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %01010101
+                        .DB     %11111111
+#ENDIF
 
 PVDP_IDAT:
         .DB     _PORT_RSEL
