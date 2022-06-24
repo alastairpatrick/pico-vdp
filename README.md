@@ -74,11 +74,11 @@ These are the features supported by the revision 1 hardware and associated softw
   - Remove UART support
   - Remove mute header
 - Single board computer utilizing the Pico-VDP
-- FUZIX drivers
+- FUZIX driver
 - Video display processor SDK
   - for writing interactive bitmap graphics applications in assembly language and/or C
 - BASIC interpreter with bitmap graphics modes & commands
--  CP/M and/or FUZIX
+  - CP/M and/or FUZIX
 - Documentation
   - Hardware Manuals
   - SDK Reference
