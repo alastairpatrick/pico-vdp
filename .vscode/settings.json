@@ -29,4 +29,6 @@
         "m0plus.h": "c"
     },
     "cortex-debug.variableUseNaturalFormat": false,
+    "cortex-debug.openocdPath": "${env:OPENOCD_PATH}/src/openocd",
+    "editor.quickSuggestionsDelay": 1073741824
 }
