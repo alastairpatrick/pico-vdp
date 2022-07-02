@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "hardware/clocks.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
@@ -22,6 +24,7 @@ static int g_volume = 128;
 static AYState g_ay_state[2];
 
 static volatile int g_secondary_level;
+static int g_dither_level;
 
 void STRIPED_SECTION SampleISR() {
   int core_num = get_core_num();
@@ -33,8 +36,9 @@ void STRIPED_SECTION SampleISR() {
     int level = GenerateAY(&g_ay_state[core_num], g_sys80_regs.ay[core_num]);
 
     if (core_num == 0) {
-      level = ((level + g_secondary_level) * g_volume) >> 17;
-      pwm_set_chan_level(g_pwm_slice, g_pwm_channel, level);
+      level = (level + g_secondary_level) * g_volume + g_dither_level;
+      g_dither_level = level & 0x1FFFF;
+      pwm_set_chan_level(g_pwm_slice, g_pwm_channel, level >> 17);
     } else {
       g_secondary_level = level;
     }
