@@ -63,6 +63,9 @@ int STRIPED_SECTION GenerateAY(AYState* state, volatile TrackedSys80Reg* regs) {
   // Noise enables in bits 3-5
   int enables = regs[7].value;
 
+  int env_style = regs[15].value & 0xF;
+  int env_amplitude = g_envelopes[env_style][state->env_pos];
+
   int mix = 0;
   for (int j = 0; j < count_of(state->tones); ++j) {
     // Tone generator
@@ -74,15 +77,14 @@ int STRIPED_SECTION GenerateAY(AYState* state, volatile TrackedSys80Reg* regs) {
 
     int amplitude = regs[j + 10].value & 0x1F;
     if (amplitude & 0x10) {
-      int env_style = regs[15].value & 0xF;
-      amplitude = g_envelopes[env_style][state->env_pos];
+      amplitude = env_amplitude;
     } else {
       amplitude = amplitude * 2 + 1;
     }
 
     bool tone_disable = (enables >> j) & 0x1;
     bool noise_disable = (enables >> (j+3)) & 0x1;
-    if ((tone->state || tone_disable) && (state->noise_state || noise_disable)) {
+    if ((tone->state | tone_disable) & (state->noise_state | noise_disable)) {
       mix += g_vol_table[amplitude];
     }
   }
