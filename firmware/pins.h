@@ -14,6 +14,7 @@
 #define RD_PIN 12
 #define PWM_PIN 13
 #define DATA_PINS 14
+#define SUPPLY_PIN 24
 #define LED_PIN 25
 #define CS0_PIN 22
 #define CS1_PIN 26

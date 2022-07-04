@@ -19,6 +19,7 @@ add_executable(firmware
   main.c
   perf.c
   scan_out.c
+  supply.c
   sys80.c
   video_dma.c
 )
@@ -27,6 +28,7 @@ target_compile_definitions(firmware PRIVATE
   PICOVDP_OVERCLOCK=1
   PICOVDP_ENABLE_AUDIO=1
   PICOVDP_ENABLE_DUAL_AUDIO=1
+  PICOVDP_MONITOR_SUPPLY=1
 )
 
 # Make sure TinyUSB can find tusb_config.h
@@ -40,6 +42,7 @@ pico_enable_stdio_uart(firmware 1)
 pico_add_extra_outputs(firmware)
 
 target_link_libraries(firmware
+  hardware_adc
   hardware_dma
   hardware_interp
   hardware_pio

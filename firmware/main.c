@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
+#include "hardware/adc.h"
 #include "hardware/structs/bus_ctrl.h"
 #include "hardware/structs/syscfg.h"
 #include "tusb.h"
@@ -13,12 +14,13 @@
 #include "pins.h"
 #include "scan_out.h"
 #include "section.h"
+#include "supply.h"
 #include "sys80.h"
 #include "video_dma.h"
 
-
 void ScanMain() {
   InitPerf();
+  InitSupplyMonitor();
   tusb_init();
 
   if (PICOVDP_ENABLE_AUDIO) {
@@ -30,6 +32,7 @@ void ScanMain() {
 
   for (;;) {
     UpdateKeyboard();
+    UpdateSupplyMonitor();
     tuh_task();
   }
 }
@@ -41,6 +44,7 @@ void InitLED() {
 
 int main() {
   stdio_init_all();
+  adc_init();
   InitPerf();
   InitLED();
   
