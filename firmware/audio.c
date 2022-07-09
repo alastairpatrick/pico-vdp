@@ -10,6 +10,7 @@
 #include "audio.h"
 
 #include "ay.h"
+#include "parallel.h"
 #include "pins.h"
 #include "section.h"
 
@@ -75,9 +76,7 @@ static void InitSamplePWM(int core_num) {
   pwm_set_enabled(sample_pwm, true);
 }
 
-void InitAudio() {
-  int core_num = get_core_num();
-
+static void InitAudioParallel(const void* cc, int core_num) {
   if (core_num == 0) {
     InitOutputPWM();
   }
@@ -86,6 +85,17 @@ void InitAudio() {
     InitAY(&g_ay_state[core_num]);
     InitSamplePWM(core_num);
   }
+}
+
+void InitAudio() {
+  if (!PICOVDP_ENABLE_AUDIO) {
+    return;
+  }
+  
+  ParallelContext ctx = {
+    .entry = InitAudioParallel,
+  };
+  Parallel(&ctx);
 }
 
 void ChangeVolume(int delta) {

@@ -3,82 +3,78 @@
 #include <stdio.h>
 #include <string.h>
 #include "hardware/interp.h"
+#include "pico.h"
 #include "pico/stdlib.h"
 
+#include "scan_out.h"
+
+#include "parallel.h"
 #include "section.h"
 #include "sys80.h"
 #include "video_dma.h"
 
-#include "scan_out.h"
-
 #define AWFUL_MAGENTA 0xC7
 
-#define DISPLAY_PAGE_MASK 0xF
-#define DISPLAY_PAGE_SIZE 512  // 32-bit words
+#define PLANE_WIDTH 64
+#define PLANE_HEIGHT 64
+#define NUM_PALETTES 8
+#define PALETTE_SIZE 16
+#define NAM_PLANES 2
 
-static DisplayBank g_display_bank_a;
-static DisplayBank g_display_bank_b;
-static int g_scan_bank_idx;
-static DisplayBank* g_scan_bank = &g_display_bank_a;
-static DisplayBank* volatile g_blit_bank = &g_display_bank_a;
-static volatile bool g_swap_pending;
-static volatile SwapMode g_swap_mode;
-static uint8_t g_current_line;
+#define TILE_SIZE 8
+#define TILE_WORDS 8
 
-volatile bool g_display_blit_clock_enabled;
-static bool g_lines_enabled;
+#define TEXT_WIDTH 8
+#define CHAR_BYTES 16
 
-static int g_pixels_addr;
-static DisplayMode g_display_mode;
+typedef struct {
+  PlaneMode plane_mode :8;                        // 1 bytes
+  uint8_t window_x, window_y;                     // 2 bytes
+  uint8_t pad[125];
+  uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
+} PlaneRegs;
 
-static int g_x_shift;
+static_assert(sizeof(PlaneRegs) == 256);
 
-static uint8_t SCAN_OUT_DATA_SECTION g_palette[16] = {
-  0b00000000,
-  0b11111111,
-  0b00000001,
-  0b00000010,
-  0b00000100,
-  0b00001000,
-  0b00010000,
-  0b00100000,
+typedef struct {
+  union {
+    struct {
+      uint8_t palette_idx : 3;
+      bool flip_x         : 1;
+      bool flip_y         : 1;
+      uint16_t tile_idx   : 11;
+    } tile;
 
-  0b01000000,
-  0b10000000,
-  0b11000000,
-  0b00000001,
-  0b00000010,
-  0b00000011,
-  0b00000100,
-  0b00000110,
-};
+    struct {
+      uint8_t bg_color : 4;
+      uint8_t fg_color : 4;
+      uint8_t char_idx : 8;
+    } text;
+  };
+} Name;
 
-bool STRIPED_SECTION IsBlitClockEnabled(int dot_x) {
-  if (dot_x < g_blank_logical_width) {
-    return true;
-  } else {
-    return g_display_blit_clock_enabled;
-  }
-}
+static_assert(sizeof(Name) == 2);
 
-void STRIPED_SECTION SwapBanks(SwapMode mode, int line_idx) {
-  g_swap_mode = mode;
-  g_sys80_regs.start_line = line_idx;
-  g_swap_pending = true;
-}
+typedef struct {
+  union {
+    struct {
+      Name names[PLANE_WIDTH * PLANE_HEIGHT]; // 3840 bytes
+      PlaneRegs regs;                         // 256 bytes
+      uint8_t chars[256 * CHAR_BYTES];
+    };
+    uint32_t tiles[65536 / sizeof(uint32_t)];
+  };
+} Plane;
 
-bool STRIPED_SECTION IsSwapPending() {
-  return g_swap_pending;
-}
+static_assert(sizeof(Plane) == 65536);
 
-DisplayBank* STRIPED_SECTION GetBlitBank() {
-  return g_blit_bank;
-}
+static Plane g_planes[NAM_PLANES];
+static PlaneRegs g_plane_regs[NAM_PLANES];
 
 #pragma GCC push_options
 #pragma GCC optimize("O3")
 
-void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
+static void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
   for (int x = 0; x < width; ++x) {
     *dest++ = rgb;
   }
@@ -99,242 +95,167 @@ static void STRIPED_SECTION ConfigureInterpolator(int shift_bits) {
   interp_set_config(interp1, 1, &cfg);
 }
 
-static uint32_t SCAN_OUT_INNER_SECTION ReadPixelData() {
-  uint32_t data = g_scan_bank->words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-  ++g_pixels_addr;
-  return data;
+typedef struct {
+  ParallelContext parallel;
+  uint8_t* dest;
+  int plane_idx;
+  int y;
+} PlaneContext;
+
+static SCAN_OUT_INNER_SECTION Name GetName(const Plane* plane, int idx) {
+  return plane->names[idx & (count_of(plane->names) - 1)];
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutLores2(uint8_t* dest, int width) {
-  ConfigureInterpolator(1);
-
-  for (int x = 0; x < width/64; ++x) {
-    interp0->accum[0] = ReadPixelData();
-
-    for (int i = 0; i < 32; ++i) {
-      *dest++ = *dest++ = g_palette[interp0->pop[1]];
-    }
-  }
+static SCAN_OUT_INNER_SECTION uint32_t GetTile(const Plane* plane, int idx) {
+  return plane->tiles[idx & (count_of(plane->tiles) - 1)];
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutHires2(uint8_t* dest, int width) {
-  ConfigureInterpolator(1);
+static SCAN_OUT_INNER_SECTION int GetChar(const Plane* plane, int idx) {
+  return plane->chars[idx & (count_of(plane->chars) - 1)];
+}
 
-  for (int x = 0; x < width/32; ++x) {
-    interp0->accum[0] = ReadPixelData();
+static SCAN_OUT_INNER_SECTION const uint8_t* GetPalette(const PlaneRegs* regs, int idx) {
+  return regs->palettes[idx & (count_of(regs->palettes) - 1)];
+}
 
-    #pragma GCC unroll 4
-    for (int i = 0; i < 32; ++i) {
-      dest[i] = g_palette[interp0->pop[1]];
+static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num) {
+  const Plane* plane = &g_planes[ctx->plane_idx];
+  const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
+  int y = ctx->y + regs->window_y;
+
+  int source_idx = (y * TILE_SIZE) * PLANE_WIDTH + (regs->window_x * TILE_SIZE) + core_num;
+
+  static_assert(TILE_SIZE * 2 == 16);
+  uint8_t* dest = ctx->dest - (regs->window_x & (TILE_SIZE-1)) + (core_num * TILE_SIZE * 2);
+
+  ConfigureInterpolator(4);
+
+  for (int c = 0; c < 41; c += NUM_CORES) {
+    Name name = GetName(plane, source_idx);
+    source_idx += NUM_CORES;
+
+    const uint8_t* palette = GetPalette(regs, name.tile.palette_idx);
+
+    int pattern_y = y & (TILE_SIZE-1);
+    if (name.tile.flip_y) {
+      pattern_y = (TILE_SIZE-1) - pattern_y;
     }
+
+    int tile_idx = name.tile.tile_idx;
+    interp0->accum[0] = GetTile(plane, tile_idx * TILE_WORDS + pattern_y);
+
+    #pragma GCC unroll 8
+    for (int i = 0; i < 16; i += 2) {
+      int color = interp0->pop[1];
+      dest[i] = dest[i+1] = palette[color];
+    }
+
     dest += 32;
   }
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutLores4(uint8_t* dest, int width) {
+static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int text_height) {
+  const Plane* plane = &g_planes[ctx->plane_idx];
+  const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
+
+  int y = ctx->y + regs->window_y * text_height;
+  int32_t pattern_y = y % text_height;
+  int char_y = y / text_height;
+
+  int source_idx = (char_y * PLANE_WIDTH) + regs->window_x + core_num;
+
+  const uint8_t* palette = GetPalette(regs, 0);
+
+  static_assert(TEXT_WIDTH * 2 == 16);
+  uint8_t* dest = ctx->dest + (ctx->plane_idx * TEXT_WIDTH) + (core_num * TEXT_WIDTH * 2);
+
   ConfigureInterpolator(1);
 
-  for (int x = 0; x < width/32; ++x) {
-    interp0->accum[0] = ReadPixelData();
+  for (int c = 0; c < 41; c += NUM_CORES) {
+    Name name = GetName(plane, source_idx);
+    source_idx += NUM_CORES;
 
-    for (int i = 0; i < 16; ++i) {
-      *dest++ = *dest++ = g_palette[interp0->pop[1]];
-    }
-  }
-}
+    int char_idx = name.text.char_idx;
+    interp0->accum[0] = GetChar(plane, char_idx * CHAR_BYTES + pattern_y);
 
-static void SCAN_OUT_INNER_SECTION ScanOutHires4(uint8_t* dest, int width) {
-  ConfigureInterpolator(2);
+    uint8_t colors[2] = {
+      palette[name.text.bg_color],
+      palette[name.text.fg_color],
+    };
 
-  for (int x = 0; x < width/16; ++x) {
-    interp0->accum[0] = ReadPixelData();
-
-    #pragma GCC unroll 4
-    for (int i = 0; i < 16; ++i) {
-      dest[i] = g_palette[interp0->pop[1]];
-    }
-    dest += 16;
-  }
-}
-
-static void SCAN_OUT_INNER_SECTION ScanOutLores16(uint8_t* dest, int width) {
-  ConfigureInterpolator(4);
-
-  for (int x = 0; x < width/16; ++x) {
-    interp0->accum[0] = ReadPixelData();
-
+    #pragma GCC unroll 8
     for (int i = 0; i < 8; ++i) {
-      *dest++ = *dest++ = g_palette[interp0->pop[1]];
+      int color = interp0->pop[1];
+      dest[i] = colors[color];
     }
-  }
-}
 
-static void SCAN_OUT_INNER_SECTION ScanOutHires16(uint8_t* dest, int width) {
-  ConfigureInterpolator(4);
-
-  for (int x = 0; x < width/16; ++x) {
-    interp0->accum[0] = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    interp1->accum[0] = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    ++g_pixels_addr;
-
-    for (int i = 0; i < 8; ++i) {
-      *dest++ = g_palette[interp0->pop[1]];
-      *dest++ = g_palette[interp1->pop[1]];
-    }
-  }
-}
-
-static void SCAN_OUT_INNER_SECTION ScanOutLores256(uint8_t* dest, int width) {
-  ConfigureInterpolator(8);
-
-  for (int x = 0; x < width/8; ++x) {
-    interp0->accum[0] = g_display_bank_a.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    interp0->accum[1] = g_display_bank_b.words[g_pixels_addr & (DISPLAY_BANK_SIZE-1)];
-    ++g_pixels_addr;
-
-    for (int i = 0; i < 4; ++i) {
-      *dest++ = interp0->pop[1];
-      *dest++ = interp1->pop[1];
-    }
-  }
-}
-
-void SCAN_OUT_INNER_SECTION ScanOutSprite(uint8_t* dest, int width, int y) {
-  int sprite_x = g_sys80_regs.sprite_x * 2;
-  int sprite_rgb = g_sys80_regs.sprite_rgb;
-
-  int sprite_bits = g_sys80_regs.sprite_bitmap[y*2] | (g_sys80_regs.sprite_bitmap[y*2+1] << 8);
-
-  #pragma GCC unroll 4
-  for (int x = 0; x < 16; ++x) {
-    if ((sprite_bits >> x) & 1) {
-      dest[sprite_x + x] = sprite_rgb;
-    }
+    dest += 32;
   }
 }
 
 #pragma GCC pop_options
 
-void STRIPED_SECTION ScanOutBeginDisplay() {
-  g_current_line = g_sys80_regs.start_line;
+static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
+  const PlaneContext* ctx = cc;
+  const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
 
-  if (g_swap_pending) {
-    switch (g_swap_mode) {
-    case SWAP_SCAN_A_BLIT_A:
-      g_blit_bank = g_scan_bank = &g_display_bank_a;
-      break;
-    case SWAP_SCAN_B_BLIT_B:
-      g_blit_bank = g_scan_bank = &g_display_bank_b;
-      break;
-    case SWAP_SCAN_A_BLIT_B:
-      g_scan_bank = &g_display_bank_a;
-      g_blit_bank = &g_display_bank_b;
-      break;
-    case SWAP_SCAN_B_BLIT_A:
-      g_scan_bank = &g_display_bank_b;
-      g_blit_bank = &g_display_bank_a;
-      break;
-    }
-
-    g_swap_pending = false;
+  switch (regs->plane_mode) {
+  case PLANE_MODE_TILE:
+    ScanOutTileMode(ctx, core_num);
+    break;
+  case PLANE_MODE_TEXT_80_30:
+    ScanOutTextMode(ctx, core_num, 8);
+    break;
+  case PLANE_MODE_TEXT_80_24:
+    ScanOutTextMode(ctx, core_num, 10);
+    break;
   }
+}
 
-  g_lines_enabled = true;
+void STRIPED_SECTION ScanOutBeginDisplay() {
+  for (int i = 0; i < NAM_PLANES; ++i) {
+    g_plane_regs[i] = g_planes[i].regs;
+  }
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   g_sys80_regs.current_y = y;
 
-  if (g_current_line == g_sys80_regs.wrap_line) {
-    g_current_line = g_sys80_regs.reset_line;
+  for (int i = 0; i < NAM_PLANES; ++i) {
+    PlaneContext ctx = {
+      .parallel.entry = ScanOutPlane,
+      .plane_idx = i,
+      .dest = dest,
+      .y = y,
+    };
+
+    Parallel(&ctx);
   }
-
-  if (g_lines_enabled) {
-    const int max_lines = 256;
-    int lines_high = (g_sys80_regs.lines_page & DISPLAY_PAGE_MASK) * DISPLAY_PAGE_SIZE;
-    int lines_low = g_current_line * 2;
-    ScanLine* line = g_scan_bank->lines + (lines_high | lines_low) / 2;
-
-    if (line->display_mode_en) {
-      g_display_mode = line->display_mode;
-    }
-    
-    uint8_t* source_palette = g_scan_bank->bytes + (line->palette_addr * sizeof(uint32_t));
-    int palette_mask = line->palette_mask;
-    for (int i = 0; i < 16; i += 4) {
-      if (palette_mask & 1) {
-        for (int j = 0; j < 4; ++j) {
-          g_palette[i + j] = source_palette[i + j];
-        }
-      }
-      palette_mask >>= 1;
-    }
-
-    if (line->pixels_addr_en) {
-      g_pixels_addr = line->pixels_addr;
-    }
-
-    if (line->x_shift_en) {
-      g_x_shift = line->x_shift;
-    }
-
-    g_lines_enabled = line->next_line_en;
-  }
-
-  g_display_blit_clock_enabled = g_blit_bank != g_scan_bank && g_display_mode != DISPLAY_MODE_LORES_256 && g_display_mode != DISPLAY_MODE_HIRES_16;
-  
-  bool border_left = g_sys80_regs.border_left * 2;
-  bool border_right = g_sys80_regs.border_left * 2;
-  uint8_t border_rgb = g_sys80_regs.border_rgb;
-
-  switch (g_display_mode) {
-    case DISPLAY_MODE_DISABLED:
-      ScanOutSolid(dest + g_x_shift, width, g_palette[0]);
-      break;
-    case DISPLAY_MODE_HIRES_2:
-      ScanOutHires2(dest + g_x_shift, width);
-      break;
-    case DISPLAY_MODE_HIRES_4:
-      ScanOutHires4(dest + g_x_shift, width);
-      break;
-    case DISPLAY_MODE_LORES_2:
-      ScanOutLores2(dest + g_x_shift, width);
-      break;
-    case DISPLAY_MODE_LORES_4:
-      ScanOutLores4(dest + g_x_shift, width);
-      break;
-    case DISPLAY_MODE_LORES_16:
-      ScanOutLores16(dest + g_x_shift, width);
-      break;
-    case DISPLAY_MODE_HIRES_16:
-      ScanOutHires16(dest + g_x_shift, width);
-      break;
-    case DISPLAY_MODE_LORES_256:
-      ScanOutLores256(dest + g_x_shift, width);
-      break;
-    default:
-      ScanOutSolid(dest + g_x_shift, width, AWFUL_MAGENTA);
-      break;
-  }
-
-  int sprite_y = g_sys80_regs.sprite_y;
-  if (y >= sprite_y && y < sprite_y + 8) {
-    ScanOutSprite(dest + g_x_shift, width, y - sprite_y);
-  }
-
-  for (int i = 0; i < g_x_shift; ++i) {
-    dest[i] = g_palette[0];
-  }
-  for (int i = width + g_x_shift; i < width; ++i) {
-    dest[i] = g_palette[0];
-  }
-
-  memset(dest, border_rgb, border_left);
-  memset(dest + width - border_right, border_rgb, border_right);
-
-  ++g_current_line;
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {
-  g_display_blit_clock_enabled = true;
+}
+
+void InitScanOut() {
+  for (int i = 0; i < count_of(g_planes->chars); ++i) {
+    g_planes[0].chars[i] = rand();
+    g_planes[1].chars[i] = rand();
+  }
+
+  for (int i = 0; i < 16; ++i) {
+    g_planes[0].regs.palettes[0][i] = g_planes[1].regs.palettes[0][i] = rand();
+  }
+
+  for (int i = 0; i < count_of(g_planes->names); ++i) {
+    for (int j = 0; j < 2; ++j) {
+      Name name = {
+        .text.bg_color = rand(),
+        .text.fg_color = rand(),
+        .text.char_idx = i,
+      };
+      g_planes[j].names[i] = name;
+    }
+  }
+
+  g_planes[0].regs.plane_mode = g_planes[1].regs.plane_mode = PLANE_MODE_TEXT_80_24;
 }

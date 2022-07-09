@@ -5,8 +5,6 @@
 
 #include "section.h"
 
-#define VIDEO_PWM 0
-
 typedef struct {
   int display_pixels;
   int front_porch_pixels;
@@ -32,17 +30,9 @@ extern const VideoTiming g_timing640_480;
 extern const VideoTiming g_timing800_600;
 extern const VideoTiming g_timing1024_768;
 
-extern int g_blank_logical_width;
-extern int g_total_logical_width;
-
 void InitVideo(const VideoTiming* timing);
 void SetVideoResolution(int horz_shift, int vert_shift);
 void InitVideoInterrupts();
 void StartVideo();
-
-// Counts logical pixels. Zero is beginning of front porch. Wraps at end of display.
-static inline int STRIPED_SECTION GetDotX() {
-  return pwm_get_counter(VIDEO_PWM);
-}
 
 #endif  // VIDEO_DMA_H

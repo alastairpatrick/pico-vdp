@@ -33,8 +33,10 @@ typedef struct {
 
                                           // Not overclocked                                                Overclocked
 const VideoTiming g_timing640_480 = {
-  1512 * MHZ, OVERCLOCK_SELECT(6, 4), 2,  // 1512MHZ / 6 / 2 = 126MHz                                       1512MHZ / 4 / 2 = 189MHz
-  OVERCLOCK_SELECT(640, 960),             // 126MHZ / (640/256) = 50.4MHZ                                   189MHz / (960/256) = 50.4MHZ
+  OVERCLOCK_SELECT(1512, 1008) * MHZ,
+  OVERCLOCK_SELECT(6, 5),
+  OVERCLOCK_SELECT(2, 1),                 // 1512MHZ / 6 / 2 = 126MHz                                       1008MHZ / 5 / 1 = 201.6MHz
+  OVERCLOCK_SELECT(640, 1024),            // 126MHZ / (640/256) = 50.4MHZ                                   201.6MHz / (1024/256) = 50.4MHZ
                                           // 50.4MHZ / 2 cycles/pixel = 25.2MHZ =~ 25.175MHz +- 0.5%
   { 640, 16, 96, 48 },
   { 480, 10, 2, 33 },
@@ -55,9 +57,6 @@ const VideoTiming g_timing1024_768 = {
   { 1024, 24, 136, 160 },
   { 768, 3, 6, 29 },
 };
-
-int g_blank_logical_width;
-int g_total_logical_width;
 
 static VideoTiming g_timing;
 static int g_horz_shift, g_vert_shift;
@@ -229,10 +228,6 @@ static void STRIPED_SECTION FrameISR() {
 }
 
 static void STRIPED_SECTION LineISR() {
-  if (g_logical_y == 0) {
-    pwm_set_counter(VIDEO_PWM, 0);
-  }
-
   pio_interrupt_clear(PIO, 0);
 
   if (g_logical_y == 0) {
@@ -281,9 +276,6 @@ void InitVideo(const VideoTiming* timing) {
   channel_config_set_write_increment(&dma_cfg, true);
   channel_config_set_ring(&dma_cfg, true, 3);
   dma_channel_configure(g_dma_ctrl_chan, &dma_cfg, &dma_hw->ch[g_dma_data_chan].al3_transfer_count, NULL, 2, false);
-
-  pwm_config pwm_cfg = pwm_get_default_config();
-  pwm_init(VIDEO_PWM, &pwm_cfg, false);
 }
 
 void SetVideoResolution(int horz_shift, int vert_shift) {
@@ -296,20 +288,6 @@ void SetVideoResolution(int horz_shift, int vert_shift) {
 
   int pio_clk_div = g_timing.pio_clk_div << horz_shift;
   pio_sm_set_clkdiv_int_frac(PIO, 0, pio_clk_div >> 8, pio_clk_div & 0xFF);
-
-  pwm_set_counter(VIDEO_PWM, 0);
-
-  // Want a period of total_logical_width so set WRAP to total_logical_width-1.
-  g_blank_logical_width = (g_timing.horz.front_porch_pixels + g_timing.horz.sync_pixels + g_timing.horz.back_porch_pixels) >> horz_shift;
-  g_total_logical_width = (g_timing.horz.display_pixels >> horz_shift) + g_blank_logical_width;
-  pwm_set_wrap(VIDEO_PWM, g_total_logical_width - 1);
-
-  // +1 because PIO timing is 2 cycles/pixel.
-  int pwm_clk_div = pio_clk_div << (vert_shift + 1);
-  assert(pwm_clk_div < 65536);  // 8.4 divider
-  pwm_set_clkdiv_int_frac(VIDEO_PWM, pwm_clk_div >> 8, (pwm_clk_div >> 4) & 0xF);
-
-  pwm_set_enabled(VIDEO_PWM, true);
 }
 
 void InitVideoInterrupts() {

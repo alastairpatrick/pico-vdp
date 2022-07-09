@@ -9,7 +9,7 @@
 
 #include "audio.h"
 #include "hid.h"
-#include "blit.h"
+#include "parallel.h"
 #include "perf.h"
 #include "pins.h"
 #include "scan_out.h"
@@ -17,25 +17,6 @@
 #include "supply.h"
 #include "sys80.h"
 #include "video_dma.h"
-
-void ScanMain() {
-  InitPerf();
-  InitSupplyMonitor();
-  tusb_init();
-
-  if (PICOVDP_ENABLE_AUDIO) {
-    InitAudio();
-  }
-
-  InitVideoInterrupts();
-  StartVideo();  
-
-  for (;;) {
-    UpdateKeyboard();
-    UpdateSupplyMonitor();
-    tuh_task();
-  }
-}
 
 void InitLED() {
   gpio_init(LED_PIN);
@@ -45,18 +26,26 @@ void InitLED() {
 int main() {
   stdio_init_all();
   adc_init();
+  tusb_init();
+
+  InitParallel();
   InitPerf();
+
+  InitAudio();
   InitLED();
+  InitScanOut();
+  InitSupplyMonitor();
   
-  InitVideo(&g_timing1024_768);
-  SetVideoResolution(1, 2);
+  InitVideo(&g_timing640_480);
+  SetVideoResolution(0, 1);
+  InitVideoInterrupts();
+  StartVideo();  
 
   InitSys80();
 
-  if (PICOVDP_ENABLE_AUDIO) {
-    InitAudio();
+  for (;;) {
+    UpdateKeyboard();
+    UpdateSupplyMonitor();
+    tuh_task();
   }
-
-  multicore_launch_core1(ScanMain);
-  BlitMain(); 
 }

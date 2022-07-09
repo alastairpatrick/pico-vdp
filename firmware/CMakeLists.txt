@@ -12,11 +12,11 @@ pico_sdk_init()
 add_executable(firmware
   audio.c
   ay.c
-  blit.c
   cdc.c
   hid.c
   keymap.c
   main.c
+  parallel.c
   perf.c
   scan_out.c
   supply.c
