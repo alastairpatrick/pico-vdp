@@ -22,12 +22,13 @@ add_executable(firmware
   supply.c
   sys80.c
   video_dma.c
+  video_mem.c
 )
 
 target_compile_definitions(firmware PRIVATE
   PICOVDP_OVERCLOCK=1
-  PICOVDP_ENABLE_AUDIO=1
-  PICOVDP_ENABLE_DUAL_AUDIO=1
+  PICOVDP_ENABLE_AUDIO=0
+  PICOVDP_ENABLE_DUAL_AUDIO=0
   PICOVDP_MONITOR_SUPPLY=1
 )
 

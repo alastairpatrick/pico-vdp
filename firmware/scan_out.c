@@ -62,6 +62,7 @@ typedef struct {
       PlaneRegs regs;                         // 256 bytes
       uint8_t chars[256 * CHAR_BYTES];
     };
+    uint8_t bytes[65536];
     uint32_t tiles[65536 / sizeof(uint32_t)];
   };
 } Plane;
@@ -70,6 +71,24 @@ static_assert(sizeof(Plane) == 65536);
 
 static Plane g_planes[NAM_PLANES];
 static PlaneRegs g_plane_regs[NAM_PLANES];
+
+int STRIPED_SECTION ReadVideoMemByte(int device, int address) {
+  switch (device) {
+  case 0:
+  case 1:
+    return g_planes[device].bytes[address & 0xFFFF];
+  default:
+    return 0;
+  }
+}
+
+void STRIPED_SECTION WriteVideoMemByte(int device, int address, int data) {
+  switch (device) {
+  case 0:
+  case 1:
+    g_planes[device].bytes[address & 0xFFFF] = data;
+  }
+}
 
 #pragma GCC push_options
 #pragma GCC optimize("O3")
@@ -122,7 +141,8 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
   const Plane* plane = &g_planes[ctx->plane_idx];
   const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
   int y = ctx->y + regs->window_y;
-
+  int pattern_y = y & (TILE_SIZE-1);
+  
   int source_idx = (y * TILE_SIZE) * PLANE_WIDTH + (regs->window_x * TILE_SIZE) + core_num;
 
   static_assert(TILE_SIZE * 2 == 16);
@@ -136,13 +156,13 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
 
     const uint8_t* palette = GetPalette(regs, name.tile.palette_idx);
 
-    int pattern_y = y & (TILE_SIZE-1);
+    int flipped_pattern_y = pattern_y;
     if (name.tile.flip_y) {
-      pattern_y = (TILE_SIZE-1) - pattern_y;
+      flipped_pattern_y = (TILE_SIZE-1) - flipped_pattern_y;
     }
 
     int tile_idx = name.tile.tile_idx;
-    interp0->accum[0] = GetTile(plane, tile_idx * TILE_WORDS + pattern_y);
+    interp0->accum[0] = GetTile(plane, tile_idx * TILE_WORDS + flipped_pattern_y);
 
     #pragma GCC unroll 8
     for (int i = 0; i < 16; i += 2) {

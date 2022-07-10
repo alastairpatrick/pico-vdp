@@ -89,7 +89,7 @@ PUBLIC entry:
 
 
 ; PIO 1 SM 3
-; 8 instructions
+; 10 instructions
 ; Port FIFO (write) Streams data to blitter.
 ; Port FIFO (read) Returns whether blitter FIFO is ready to receive at least 4 bytes without overflow.
 .PROGRAM sys80_fifo
@@ -97,9 +97,12 @@ PUBLIC entry:
 .DEFINE PUBLIC cs_pin 27
 
 write:
-  IN PINS, 8                      ; no auto-push (because it could block)
-  PUSH IFFULL NOBLOCK             ; gather 32-bits before pushing
-  
+  MOV X, STATUS                   ; emulate a 1 deep FIFO latch by only writing if FIFO is empty
+  JMP !X entry
+
+  IN PINS, 8                      ; Auto-push data. FIFO is known to be empty so this never blocks.
+  PUSH                            ; Push dummy value. Never blocks.
+
 PUBLIC entry:
 .WRAP_TARGET
   WAIT 1 GPIO cs_pin
@@ -155,14 +158,14 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     32,
     8,
     8,
-    32,
+    8,
   };
 
   const static bool sm_auto_push[4] = {
     true,
     true,
     true,
-    false,
+    true,
   };
 
   const static bool sm_push_dir[4] = {
@@ -189,7 +192,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
 
   sm_config_set_jmp_pin(&c, RD_PIN);
 
-  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 3);
+  sm_config_set_mov_status(&c, STATUS_RX_LESSTHAN, 1);
 
   pio_sm_set_consecutive_pindirs(pio, sm, DATA_PINS, 8, false /*pindir*/ );
 

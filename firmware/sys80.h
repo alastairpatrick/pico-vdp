@@ -19,6 +19,13 @@ typedef struct {
 } TrackedSys80Reg;
 
 typedef struct {
+  uint16_t operation;
+  uint16_t device;
+  uint32_t address;
+  uint16_t data;
+} MemAccessSys80Regs;
+
+typedef struct {
   // Read-write registers
   union {
     struct {
@@ -26,22 +33,7 @@ typedef struct {
       TrackedSys80Reg ay[2][16];
 
       // Video generator range $2x, $3x
-      uint16_t lines_page;           // $20
-      uint16_t reset_line;           // $21
-      uint16_t start_line;           // $22
-      uint16_t wrap_line;            // $23
-      uint16_t border_rgb;           // $24
-      uint16_t border_left: 4;       // $25
-      uint16_t border_right: 4;
-      uint16_t pad[5];
-      uint16_t sprite_x;             // $2B
-      uint16_t sprite_y;             // $2C
-      uint16_t pad4[2];
-      uint16_t sprite_rgb;           // $2F
-      uint16_t sprite_bitmap[16];    // $30
-
-      // Blitter range $4x
-      uint16_t fifo_wrap;            // $40
+      MemAccessSys80Regs mem_access;
     };
     uint16_t rw_bytes[128];
   };
@@ -58,10 +50,7 @@ typedef struct {
 
       // Video generator range $Ax, $Bx
       uint16_t current_y;            // $A0
-      uint16_t pad3[31];
 
-      // Blitter range $Cx
-      uint16_t blit_sync;            // $C0
     };
     uint16_t ro_bytes[128];
   };
@@ -83,6 +72,10 @@ static inline uint32_t STRIPED_SECTION PopSys80Fifo() {
 
 static inline uint32_t STRIPED_SECTION Swizzle16BitSys80Reg(int data) {
   return (data & 0xFF) | ((data & 0xFF00) << 8);
+}
+
+static inline int STRIPED_SECTION Unswizzle16BitSys80Reg(uint32_t data) {
+  return ((data >> 8) | data) & 0xFFFF;
 }
 
 #endif  // SYS80_H

@@ -9,6 +9,9 @@ typedef enum {
   PLANE_MODE_TILE,
 } PlaneMode;
 
+int ReadVideoMemByte(int device, int address);
+void WriteVideoMemByte(int device, int address, int data);
+
 void ScanOutBeginDisplay();
 void ScanOutLine(uint8_t* dest, int y, int width);
 void ScanOutEndDisplay();

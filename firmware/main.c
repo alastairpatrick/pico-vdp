@@ -17,6 +17,7 @@
 #include "supply.h"
 #include "sys80.h"
 #include "video_dma.h"
+#include "video_mem.h"
 
 void InitLED() {
   gpio_init(LED_PIN);
@@ -44,6 +45,7 @@ int main() {
   InitSys80();
 
   for (;;) {
+    UpdateVideoMem();   // TODO: move to core 1
     UpdateKeyboard();
     UpdateSupplyMonitor();
     tuh_task();

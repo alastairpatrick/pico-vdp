@@ -67,7 +67,7 @@ static uint8_t DMA_SECTION g_display_lines[DISPLAY_LINE_COUNT][MAX_HORZ_DISPLAY_
 static DMAControlBlock g_dma_control_blocks[MAX_VERT_RES * 3];
 static int g_dma_data_chan, g_dma_ctrl_chan;
 
-static int g_logical_y;
+volatile int g_logical_y;
 
 static DMAControlBlock MakeControlBlock(void* read_addr, int transfer_count) {
   DMAControlBlock result = {

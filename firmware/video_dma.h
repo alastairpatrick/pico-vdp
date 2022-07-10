@@ -35,4 +35,6 @@ void SetVideoResolution(int horz_shift, int vert_shift);
 void InitVideoInterrupts();
 void StartVideo();
 
+extern volatile int g_logical_y;
+
 #endif  // VIDEO_DMA_H
