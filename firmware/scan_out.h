@@ -4,8 +4,8 @@
 #define TILE_BANK_SIZE 65536
 
 typedef enum {
-  PLANE_MODE_TEXT_80_30,
   PLANE_MODE_TEXT_80_24,
+  PLANE_MODE_TEXT_80_30,
   PLANE_MODE_TILE,
 } PlaneMode;
 

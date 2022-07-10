@@ -204,7 +204,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
     };
 
     #pragma GCC unroll 8
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 7; i >= 0; --i) {
       int color = interp0->pop[1];
       dest[i] = colors[color];
     }

@@ -172,7 +172,7 @@ static inline void sys80_program_init(PIO pio, uint sm, uint offset) {
     false,
     false,
     false,
-    true,
+    false,
   };
 
   pio_sm_config c = pio_get_default_sm_config();

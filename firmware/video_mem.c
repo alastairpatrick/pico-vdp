@@ -29,11 +29,11 @@ void UpdateVideoMem() {
   }
 
   // Process up to one memory access per scanline and as they arrive during vertical non-display area.
-  int y = g_logical_y;
+  /*int y = g_logical_y;
   if (y < 240 && y == g_last_y) {
     return;
   }
-  g_last_y = y;
+  g_last_y = y;*/
 
   // Pop the streamed data. One dummy value remains in the FIFO.
   int streamed = PopSys80Fifo();

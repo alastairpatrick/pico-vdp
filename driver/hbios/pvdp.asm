@@ -1,63 +1,35 @@
 .MODULE PVDP
 
-; Display RAM bank A layout
-; Word address  Nibble address  Pages   Description
-; $0000-$17FF   $0000-$BFFF     0-11    192 line scroll area
-; $1800-$197F   $C000-$CBFF     12      192 scanlines
-; $1C00-$1C00   $E000-$E007     14      4 color palette
-
-; Blitter RAM layout
-; Word address          Description
-; $0000-$00FF           blitter FIFO
-; $0100-$02FF           256 character bitmaps
-
-#define USEFONT6X8
+#define USEFONT8X8
 
 ; Configuration
 TERMENABLE      	.SET	TRUE
-_WIDTH                  .EQU    42              ; 42, 64 or 80
 _KEY_BUF_SIZE           .EQU    16
 _ENABLE_FIFO            .EQU    1
 _CURSOR_BLINK_PERIOD    .EQU    8
 
 ; Not configuration
+_WIDTH                  .EQU    80
 _HEIGHT                 .EQU    24
-_SCAN_WORDS             .EQU    32
-_SCAN_LINES             .EQU    _HEIGHT*8
+
+_ADDR_FONT              .EQU    $2100
+_ADDR_PALETTE           .EQU    $2080
+_ADDR_REGS              .EQU    $2000
 
 _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
-_PORT_BLIT              .EQU    $B2
-
-_REG_FIFO_WRAP          .EQU    $40
-_REG_LEDS               .EQU    $08
-_REG_LINES_PG           .EQU    $20
-_REG_KEY_ROWS           .EQU    $80
-_REG_SPRITE_BM          .EQU    $30
-_REG_SPRITE_RGB         .EQU    $2F
-_REG_SPRITE_X           .EQU    $2B
-_REG_SPRITE_Y           .EQU    $2C
-_REG_START_LINE         .EQU    $22
-_REG_WRAP_LINE          .EQU    $23
-
-_BCMD_BSTREAM           .EQU    $D0
-_BCMD_DCLEAR            .EQU    $84
-_BCMD_DDCOPY            .EQU    $AA
-_BCMD_DSTREAM           .EQU    $90
-_BCMD_IMAGE             .EQU    $BF
-_BCMD_NOP               .EQU    $1F
-_BCMD_RECT              .EQU    $8C
-_BCMD_SET_COUNT         .EQU    $03
-_BCMD_SET_CLIP          .EQU    $06
-_BCMD_SET_COLORS        .EQU    $05
-_BCMD_SET_DST_ADDR      .EQU    $00
-_BCMD_SET_SRC_ADDR      .EQU    $01
-_BCMD_SET_DPITCH        .EQU    $0A
-_BCMD_SET_FLAGS         .EQU    $04
-_BCMD_SET_GUARD         .EQU    $0D
-
+_PORT_OP                .EQU    $B2
 
 _FONT_SIZE              .EQU    $800
+
+_OP_STEP_1              .EQU    $10
+_OP_STREAM              .EQU    $03
+
+_REG_ADDRESS            .EQU    $22
+_REG_DEVICE             .EQU    $21
+_REG_KEY_ROWS           .EQU    $80
+_REG_LEDS               .EQU    $08
+_REG_OPERATION          .EQU    $20
 
 PVDP_FNTBL:
 	.DW	PVDP_INIT
@@ -78,6 +50,7 @@ PVDP_FNTBL:
 #IF (($ - PVDP_FNTBL) != (VDA_FNCNT * 2))
 	.ECHO	"*** INVALID PVDP FUNCTION TABLE ***\n"
 #ENDIF
+
 
 ; Entry:
 ;  E: Video Mode
@@ -109,27 +82,7 @@ _READY_LOOP:
         CP      $AA
         JR      NZ, _READY_LOOP
 
-#IF _ENABLE_FIFO
-        ; Initialize blitter FIFO
-        LD      D, 8
-        LD      C, _REG_FIFO_WRAP
-        CALL    _SET_REG_D
-#ENDIF
-
         CALL    PVDP_RESET
-
-        ; Add to VDA dispatch table
-        LD      BC, PVDP_FNTBL
-        LD      DE, PVDP_IDAT
-        CALL    VDA_ADDENT
-
-#IF TERMENABLE
-        ; Initialize terminal emulation
-        LD      C, A
-        LD      DE, PVDP_FNTBL
-        LD      HL, PVDP_IDAT
-        CALL    TERM_ATTACH
-#ENDIF
 
         POP     HL
         POP     DE
@@ -161,51 +114,14 @@ PVDP_RESET:
         PUSH    DE
         PUSH    HL
 
-        CALL    _INIT_LINES
-        CAll    _COPY_FONT
-        
-        ; Copy palette.
-        LD      DE, $E000
-        LD      HL, _PALETTE
-        LD      BC, _PALETTE_END - _PALETTE
-        LD      A, _BCMD_DSTREAM
-        CALL    _BLIT_COPY
-        
-        ; Lines start in page 12
-        LD      C, _REG_LINES_PG
-        LD      D, 12
-        CALL    _SET_REG_D
-        
-        ; Line wraps back to 0 at 192
-        LD      C, _REG_WRAP_LINE
-        LD      D, 192
-        CALL    _SET_REG_D
+        LD      E, _OP_STREAM + _OP_STEP_1
+        CALL    LPVDP_OPERATION
 
-        ; Initialize LINE_START
-        XOR     A
-        LD      (_SCROLL), A
-        CALL    _UPDATE_LINE_START
-
-        ; Initialize cursor sprite
-        LD      D, $FF
-        LD      C, _REG_SPRITE_RGB
-        CALL    _SET_REG_D
-        
-        ; Clear display area
-        LD      DE, 0
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_DE
-
-        LD      DE, $C000
-        LD      C, _BCMD_SET_COUNT
-        CALL    _BLIT_CMD_DE
-
-        LD      DE, $0000       ; clear color
-        LD      C, _BCMD_SET_COLORS
-        CALL    _BLIT_CMD_DE
-
-        LD      C, _BCMD_DCLEAR
-        CALL    _BLIT_CMD
+        LD      E, 1
+_RESET_DEVICE_LOOP:
+        CALL    _RESET_DEVICE
+        DEC     E
+        JP      P, _RESET_DEVICE_LOOP
 
         ; Initial VDA state
         LD      D, $0F
@@ -218,8 +134,6 @@ PVDP_RESET:
         CALL    PVDP_SET_CURSOR_POS
         
         CALL    PVDP_KEYBOARD_FLUSH
-        CALL    _INIT_BLIT_REGS
-        CALL    _BLIT_FLUSH
 
         POP     HL
         POP     DE
@@ -227,79 +141,41 @@ PVDP_RESET:
         XOR     A
         RET
 
-_INIT_LINES:
+_RESET_DEVICE:
         PUSH    BC
         PUSH    DE
         PUSH    HL
 
-        ; Disable display bank memory protection.
-        LD      DE, $0000
-        LD      C, _BCMD_SET_GUARD
-        CALL    _BLIT_CMD_DE
+        CALL    LPVDP_DEVICE
 
-        ; Initialize lines.
-        LD      DE, $C000
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_DE
-
-        LD      DE, _SCAN_LINES*16
-        LD      C, _BCMD_SET_COUNT
-        CALL    _BLIT_CMD_DE
-
-        LD      C, _BCMD_DSTREAM
-        CALL    _BLIT_CMD
-
-        LD      HL, 0
-        LD      B, _SCAN_LINES
-_LINE_LOOP:
-        CALL    _BLIT_SYNC
-
-        XOR     A               ; palette word address
-        OUT     (_PORT_BLIT), A
-        LD      A, $1C
-        OUT     (_PORT_BLIT), A
-
-        LD      A, L            ; pixel word addr = line_idx * _SCAN_WORDS
-        OUT     (_PORT_BLIT), A
-        LD      A, H            
-        OUT     (_PORT_BLIT), A
+        LD      DE, 0
+        CALL    LPVDP_ADDRESS
         
-        CALL    _BLIT_SYNC
+        ; Clear names  & regs, up to start address of regs
+        LD      BC, _ADDR_PALETTE
+        LD      E, 0
+        CALL    LPVDP_SET_RANGE
 
-#IF (_WIDTH == 80) | (_WIDTH == 64)
-        ; HIRES4 mode
-        LD      A, $72
-#ELSE
-        ; LORES16 mode
-        LD      A, $76
-#ENDIF
-        OUT     (_PORT_BLIT), A
-        LD      A, $0F
-        OUT     (_PORT_BLIT), A
+        ; Copy palette 0
+        LD      BC, 16
+        LD      HL, _PALETTE
+        CALL    LPVDP_COPY_RANGE
 
-        LD      A, $00
-        OUT     (_PORT_BLIT), A
-        OUT     (_PORT_BLIT), A
+        LD      DE, _ADDR_FONT
+        CALL    LPVDP_ADDRESS
 
-        LD      DE, _SCAN_WORDS
-        ADD     HL, DE
-        LD      A, H
-        CP      _SCAN_WORDS * 192 / 256
-        JR      NZ, _NO_LINE_WRAP
-        LD      H, 0
-_NO_LINE_WRAP:
-        DJNZ    _LINE_LOOP
+        CALL    _OUTPUT_FONT
 
         POP     HL
         POP     DE
         POP     BC
         RET
-        
-_COPY_FONT:
+
+_OUTPUT_FONT:
         PUSH    BC
         PUSH    DE
         PUSH    HL
-
+        
 #IF USELZSA2
         ; Allocate buffer on stack
         LD      HL, -_FONT_SIZE
@@ -309,19 +185,35 @@ _COPY_FONT:
 
         ; Decompress font bitmaps
 	EX	DE, HL
-	LD	HL, FONT6X8
+	LD	HL, FONT8X8
 	CALL	DLZSA2
 
 	POP	HL
 #ELSE
-	LD	HL, FONT6X8		; START OF FONT DATA
+	LD	HL, FONT8X8		; START OF FONT DATA
 #ENDIF
 
-        ; Copy font to blitter RAM.
-        LD      DE, $0100
-        LD      BC, $_FONT_SIZE
-        LD      A, _BCMD_BSTREAM
-        CALL    _BLIT_COPY
+        LD      C, _PORT_OP
+        LD      D, 0
+_COPY_FONT_LOOP:
+
+        LD      B, 10
+_COPY_CHAR_LOOP:
+        CALL    LPVDP_SYNC
+        OUTI
+        JR      NZ, _COPY_CHAR_LOOP
+        CALL    LPVDP_SYNC
+
+        LD      B, 6
+_COPY_GAP_LOOP:
+        CALL    LPVDP_SYNC
+        XOR     A
+        OUT     (C), A
+        DJNZ    _COPY_GAP_LOOP
+        CALL    LPVDP_SYNC
+
+        DEC     D
+        JR      NZ, _COPY_FONT_LOOP
 
 #IF USELZSA2
         ; Free stack buffer
@@ -332,85 +224,6 @@ _COPY_FONT:
 
         POP     HL
         POP     DE
-        POP     BC
-        RET
-
-_UPDATE_LINE_START:
-        PUSH    BC
-        PUSH    DE
-
-        LD      C, _REG_START_LINE
-        LD      A, (_SCROLL)
-        SLA     A
-        SLA     A
-        SLA     A
-        LD      D, A
-        CALL    _SET_REG_D
-
-        POP     DE
-        POP     BC
-        RET
-
-_INIT_BLIT_REGS:
-        PUSH    DE
-
-        ; Enable display bank memory protection.
-        LD      DE, $F000
-        LD      C, _BCMD_SET_GUARD
-        CALL    _BLIT_CMD_DE
-
-        ; PITCH = _SCAN_WORDS*8
-        LD      DE, _SCAN_WORDS*8
-        LD      C, _BCMD_SET_DPITCH
-        CALL    _BLIT_CMD_DE
-
-#IF (_WIDTH == 80) | (_WIDTH == 64)
-        ; Width is in nibbles so 8 pixels @ 2bpp = 4 nibbles
-        ; COUNTS = $0804
-        LD      DE, $0804
-#ELSE
-        LD      DE, $0808
-#ENDIF
-        LD      C, _BCMD_SET_COUNT
-        CALL    _BLIT_CMD_DE
-
-#IF (_WIDTH == 80)
-        ; CLIP = $0400
-        LD      DE, $0400
-#ENDIF
-#IF (_WIDTH == 64)
-        ; CLIP = $0400
-        LD      DE, $0400
-#ENDIF
-#IF (_WIDTH == 42)
-        ; CLIP = $0600
-        LD      DE, $0600
-#ENDIF
-        ; 
-        LD      C, _BCMD_SET_CLIP
-        CALL    _BLIT_CMD_DE
-
-#IF (_WIDTH == 80) | (_WIDTH == 64)
-        ; UNPACK_8_16
-        LD      DE, $0100
-#ELSE
-        ; UNPACK_8_32
-        LD      DE, $0200
-#ENDIF
-        LD      C, _BCMD_SET_FLAGS
-        CALL    _BLIT_CMD_DE
-
-        POP     DE
-        RET
-
-_BLIT_FLUSH:
-        PUSH    BC
-
-        LD      C, _BCMD_NOP
-        CALL    _BLIT_CMD
-        CALL    _BLIT_CMD
-        CALL    _BLIT_CMD
-
         POP     BC
         RET
 
@@ -438,65 +251,10 @@ PVDP_SET_CURSOR_STYLE:
         PUSH    DE
         PUSH    HL
 
-        LD      A, D
-        AND     $0F
-        LD      L, A
-
-        SRL     D
-        SRL     D
-        SRL     D
-        SRL     D
-        LD      H, D
-
-        LD      B, 7
-        LD      C, _REG_SPRITE_BM+15
-
-_CURSOR_LOOP:
-        LD      A, B
-        CP      H
-        JP      M, _CLEAR_CURSOR_LINE
-        LD      A, B
-        CP      L
-        JP      P, _CLEAR_CURSOR_LINE
-
-        LD      D, $FF
-        JR      _APPLY_CURSOR_LINE
-
-_CLEAR_CURSOR_LINE:
-        LD      D, $00
-_APPLY_CURSOR_LINE:
-        CALL    _SET_CURSOR_LINE
-
-        DEC     B
-        JP      P, _CURSOR_LOOP
-
         XOR     A
         POP     HL
         POP     DE
         POP     BC
-        RET
-
-_SET_CURSOR_LINE:
-#IF _WIDTH == 42
-        LD      A, $0F
-        AND     D
-        LD      E, A
-        CALL    _SET_REG_E
-#ENDIF
-        DEC     C
-#IF _WIDTH == 80
-        LD      A, $3F
-#ENDIF
-#IF _WIDTH == 64
-        LD      A, $FF
-#ENDIF
-#IF _WIDTH == 42
-        LD      A, $FF
-#ENDIF
-        AND     D
-        LD      E, A
-        CALL    _SET_REG_E
-        DEC     C
         RET
 
 ; Entry:
@@ -519,7 +277,6 @@ PVDP_SET_CURSOR_POS:
 PVDP_SET_CHAR_ATTR:
         LD      A, E
         LD      (_ATTRS), A
-        CALL    _UPDATE_COLORS
         XOR     A
         RET
 
@@ -532,68 +289,6 @@ PVDP_SET_CHAR_ATTR:
 PVDP_SET_CHAR_COLOR:
         LD      A, E
         LD      (_COLORS), A
-        CALL    _UPDATE_COLORS        
-        XOR     A
-        RET
-
-_UPDATE_COLORS:
-        PUSH    BC
-        PUSH    DE
-
-        LD      A, (_COLORS)
-        LD      E, A
-        LD      A, (_ATTRS)
-        AND     $04             ; reverse color?
-        JR      Z, _NO_REVERSE
-        RLC     E
-        RLC     E
-        RLC     E
-        RLC     E
-_NO_REVERSE:
-
-#IF (_WIDTH == 80) | (_WIDTH == 64)
-        PUSH    IX
-        LD      IX, _4_COLOR_MAP
-
-        ; Map foreground color to 4 color mode
-        LD      A, E
-        AND     $0F
-        LD      (_FG_IDX+2), A
-_FG_IDX:
-        LD      A, (IX+0)       ; self-modifying
-        AND     $F0
-        LD      D, A
-
-        ; Map backgroudn color to 4 color mode 
-        LD      A, E
-        SRL     A
-        SRL     A
-        SRL     A
-        SRL     A
-        LD      (_BG_IDX+2), A
-_BG_IDX:
-        LD      A, (IX+0)
-        AND     $0F
-        OR      D
-        LD      E, A
-
-        POP     IX
-#ELSE
-        ; Swap nibbles of E
-        RLC     E
-        RLC     E
-        RLC     E
-        RLC     E
-#ENDIF
-
-        ; Store in COLORS
-        LD      D, 0
-        LD      C, _BCMD_SET_COLORS
-        CALL    _BLIT_CMD_DE
-
-        POP     DE
-        POP     BC
-        
         XOR     A
         RET
 
@@ -605,7 +300,6 @@ _BG_IDX:
 
 PVDP_WRITE_CHAR:
         CALL    _WRITE_CHAR
-        CALL    _BLIT_FLUSH
         XOR     A
         RET
 
@@ -615,61 +309,60 @@ _WRITE_CHAR:
         PUSH    HL
 
         LD      HL, (_POS)
-        CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_HL
+        CALL    _SELECT_DEVICE
+        CALL    _SELECT_ADDRESS
 
-        ; LADDR = char * 2 + $100
-        SLA     E
-        LD      D, 1
-        LD      C, _BCMD_SET_SRC_ADDR
-        CALL    _BLIT_CMD_DE
+        LD      A, (_ATTRS)
+        AND     $04                     ; reverse color?
+        LD      A, (_COLORS)
+        JR      NZ, _NO_REVERSE_COLOR
 
-        LD      C, _BCMD_IMAGE
-        CALL    _BLIT_CMD
+        ; Exchange color nibbles
+        RLA
+        RLA
+        RLA
+        RLA
 
+_NO_REVERSE_COLOR:
+        OUT     (_PORT_OP), A
+        CALL    LPVDP_SYNC
+
+        LD      A, E
+        OUT     (_PORT_OP), A
         CALL    _ADVANCE_POS
+        CALL    LPVDP_SYNC
 
         POP     HL
         POP     DE
         POP     BC
         RET
 
+_SELECT_DEVICE:
+        PUSH    DE
 
-; Entry:
-;  HL: character position
-; Exit:
-;  HL: DADDR nibble address in display RAM, accounting for scroll
-
-_CALC_DADDR:
-        LD      A, (_SCROLL)
-        ADD     A, H
-        CP      _HEIGHT
-        JP      M, _NO_CALC_DADDR_WRAP
-        ADD     A, -_HEIGHT
-_NO_CALC_DADDR_WRAP:
-        LD      H, A
-        SLA     H
-        SLA     H
-        SLA     H
-
-#IF (_WIDTH == 80) | (_WIDTH == 42)
-        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 6/2
         LD      A, L
-        ADD     A, L
-        ADD     A, L
-#IF (_WIDTH == 42)
-        SLA     A
-#ELSE
-        ADD     A, 8
-#ENDIF
-        LD      L, A
-#ELSE
-        ; DADDR = (row + scroll) * _SCAN_WORDS * 8 * _CHAR_HEIGHT + col * 8/2
-        SLA     L
-        SLA     L
-#ENDIF
+        AND     $1
+        LD      E, A
+        CALL    LPVDP_DEVICE
 
+        POP     DE
+        RET
+
+_SELECT_ADDRESS:
+        PUSH    DE
+
+        ; DE = y * 128 + (x & 0xFE)
+        LD      A, L
+        AND     $FE
+        SLA     A
+        SRL     H
+        RRA
+        LD      E, A
+        LD      D, H
+
+        CALL    LPVDP_ADDRESS
+
+        POP     DE
         RET
 
 _ADVANCE_POS
@@ -705,8 +398,6 @@ _FILL_TEST:
         OR      L
         JR      NZ, _FILL_LOOP
 
-        CALL    _BLIT_FLUSH
-
         POP     HL
         XOR     A
         RET
@@ -739,8 +430,6 @@ _COPY_LOOP
 _COPY_NO_WRAP:
         DJNZ    _COPY_LOOP
 
-        CALL    _BLIT_FLUSH
-
         POP     DE
         POP     BC
         XOR     A
@@ -750,19 +439,6 @@ _COPY_1_CHAR:
         PUSH    BC
         PUSH    DE
         PUSH    HL
-
-        LD      HL, (_POS)
-        CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_HL
-
-        EX      DE, HL
-        CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_SRC_ADDR
-        CALL    _BLIT_CMD_HL
-
-        LD      C, _BCMD_DDCOPY
-        CALL    _BLIT_CMD
 
         POP     HL
         POP     DE
@@ -804,10 +480,6 @@ _BACKWARD_LOOP:
 
 _SCROLL_DONE:
 
-        CALL    _UPDATE_LINE_START
-        CALL    _INIT_BLIT_REGS
-        CALL    _BLIT_FLUSH
-
         POP     HL
         POP     DE
         POP     BC
@@ -841,26 +513,118 @@ _NO_SCROLL_BACKWARD_WRAP:
         LD      HL, 0
 
 _SCROLL_CLEAR:
-        CALL    _CALC_DADDR
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_HL
-
-#IF (_WIDTH == 80)
-        LD      DE, $08F0
-#ENDIF
-#IF (_WIDTH == 64)
-        LD      DE, $0800
-#ENDIF
-#IF (_WIDTH == 42)
-        LD      DE, $08FC
-#ENDIF
-        LD      C, _BCMD_SET_COUNT
-        CALL    _BLIT_CMD_DE
-
-        LD      C, _BCMD_RECT
-        CALL    _BLIT_CMD
 
         RET
+
+
+_SYNC:
+        IN      A, (_PORT_OP)
+        AND     A
+        RET     NZ
+        JR      _SYNC
+
+
+; Entry:
+;  DE: video memory address
+LPVDP_ADDRESS:
+        PUSH    BC
+
+        LD      C, _PORT_RDAT
+        LD      A, _REG_ADDRESS
+        OUT     (_PORT_RSEL), A
+        OUT     (C), E
+        INC     A
+        OUT     (_PORT_RSEL), A
+        OUT     (C), D
+
+        POP     BC
+        RET
+
+; Entry:
+;  E: device
+LPVDP_DEVICE:
+        LD      A, _REG_DEVICE
+        OUT     (_PORT_RSEL), A
+        LD      A, E
+        OUT     (_PORT_RDAT), A
+        RET
+
+; Entry:
+;  E: operation
+LPVDP_OPERATION:
+        LD      A, _REG_OPERATION
+        OUT     (_PORT_RSEL), A
+        LD      A, E
+        OUT     (_PORT_RDAT), A
+        RET
+
+; Entry:
+;  BC: number of bytes to fill > 0
+;  E: fill byte
+LPVDP_SET_RANGE:
+        PUSH    BC
+        PUSH    DE
+
+        ; Adjust BC if C is 0
+        LD      A, C
+        AND     A
+        JR      Z, _SET_RANGE_NZ
+        INC     B
+_SET_RANGE_NZ:
+
+        LD      D, B
+        LD      B, C
+        LD      C, _PORT_OP
+_SET_RANGE_LOOP:
+        CALL    LPVDP_SYNC
+        OUT     (C), E
+        DJNZ    _SET_RANGE_LOOP
+        DEC     D
+        JR      NZ, _SET_RANGE_LOOP
+        CALL    LPVDP_SYNC
+
+        POP     DE
+        POP     BC
+        RET
+
+; Entry:
+;  BC: number of bytes to copy > 0
+;  HL: address of source data
+; Exit:
+;  HL: input HL+BC
+LPVDP_COPY_RANGE:
+        PUSH    BC
+        PUSH    DE
+
+        ; Adjust BC if C is 0
+        LD      A, C
+        AND     A
+        JR      Z, _COPY_RANGE_NZ
+        INC     B
+_COPY_RANGE_NZ:
+
+        LD      D, B
+        LD      B, C
+        LD      C, _PORT_OP
+_COPY_RANGE_LOOP:
+        CALL    LPVDP_SYNC
+        OUTI
+        JR      NZ, _COPY_RANGE_LOOP
+        DEC     D
+        JR      NZ, _COPY_RANGE_LOOP
+        CALL    LPVDP_SYNC
+
+        POP     DE
+        POP     BC
+        RET
+
+
+LPVDP_SYNC:
+        IN      A, (_PORT_OP)
+        AND     A
+        RET     NZ
+        JR      LPVDP_SYNC
+
 
 
 ; Exit:
@@ -956,36 +720,6 @@ _KEYBOARD_READ_NOT_EMPTY:
 _SHOW_CURSOR:
         PUSH    BC
         PUSH    DE
-        
-        LD      DE, (_POS)
-
-        ; SPRITE_Y = row*8
-        SLA     D
-        SLA     D
-        SLA     D
-        LD      C, _REG_SPRITE_Y
-        CALL    _SET_REG_D
-
-#IF (_WIDTH == 80) | (_WIDTH == 42)
-        ; SPRITE_X = col*3+8 or SPRITE_X = col*6
-        LD      A, E
-        ADD     A, E
-        ADD     A, E
-#IF (_WIDTH == 42)
-        SLA     A
-#ELSE
-        ADD     A, 8
-#ENDIF
-        LD      D, A
-#ELSE
-        ; SPRITE_X = col*4
-        SLA     E
-        SLA     E
-        LD      D, E
-#ENDIF
-
-        LD      C, _REG_SPRITE_X
-        CALL    _SET_REG_D
 
         POP     DE
         POP     BC
@@ -994,10 +728,6 @@ _SHOW_CURSOR:
 _HIDE_CURSOR:
         PUSH    BC
         PUSH    DE
-
-        LD      D, 255
-        LD      C, _REG_SPRITE_Y
-        CALL    _SET_REG_D
 
         POP     DE
         POP     BC
@@ -1272,121 +1002,6 @@ _SET_REG_E:
         OUT     (_PORT_RDAT), A
         RET
 
-_BLIT_SYNC:
-        IN      A, (_PORT_BLIT)
-        AND     A
-        RET     NZ
-        JR      _BLIT_SYNC
-
-_BLIT_CMD:
-        IN      A, (_PORT_BLIT)
-        AND     A
-        JR      Z, _BLIT_CMD
-        LD      A, C
-        OUT     (_PORT_BLIT), A
-        RET
-
-_BLIT_CMD_D:
-        IN      A, (_PORT_BLIT)
-        AND     A
-        JR      Z, _BLIT_CMD_D
-        LD      A, C
-        LD      C, _PORT_BLIT
-        OUT     (C), A
-        OUT     (C), D
-        RET
-
-_BLIT_CMD_DE:
-        IN      A, (_PORT_BLIT)
-        AND     A
-        JR      Z, _BLIT_CMD_DE
-        LD      A, C
-        LD      C, _PORT_BLIT
-        OUT     (C), A
-        OUT     (C), E
-        OUT     (C), D
-        RET
-
-_BLIT_CMD_HL:
-        IN      A, (_PORT_BLIT)
-        AND     A
-        JR      Z, _BLIT_CMD_HL
-        LD      A, C
-        LD      C, _PORT_BLIT
-        OUT     (C), A
-        OUT     (C), L
-        OUT     (C), H
-        RET
-
-; Entry:
-;  A: blitter cmd
-;  BC: byte count >=4, multiple of 4 
-;  DE: destination address (of nibble)
-;  HL: source ptr
-_BLIT_COPY:
-        PUSH    DE
-
-        PUSH    AF
-
-        PUSH    BC
-        LD      C, _BCMD_SET_DST_ADDR
-        CALL    _BLIT_CMD_DE
-        POP     BC
-
-        ; Set COUNT
-        PUSH    BC
-        LD      D, B
-        LD      E, C
-        SLA     E
-        RL      D
-        LD      C, _BCMD_SET_COUNT
-        CALL    _BLIT_CMD_DE
-        POP     BC
-
-        POP     AF
-
-        PUSH    BC
-        LD      C, A
-        CALL    _BLIT_CMD
-        POP     BC        
-
-        CALL    _BLIT_WRITE
-
-        POP     DE
-        RET
-
-
-; Entry:
-;  HL: source ptr
-;  BC: byte count >=4, multiple of 4 
-
-_BLIT_WRITE:
-        PUSH    BC
-        PUSH    DE
-        PUSH    HL
-
-        LD      D, B
-        LD      B, C
-        LD      A, C
-        AND     A
-        JR      Z, _BLIT_WRITE_SKIP
-        INC     D
-_BLIT_WRITE_SKIP:
-        LD      C, _PORT_BLIT
-_BLIT_WRITE_LOOP:
-        CALL    _BLIT_SYNC
-        OUTI
-        OUTI
-        OUTI
-        OUTI
-        JR      NZ, _BLIT_WRITE_LOOP
-        DEC     D
-        JR      NZ, _BLIT_WRITE_LOOP
-
-        POP     HL
-        POP     DE
-        POP     BC
-        RET
 
 
 _KEY_BUF_BEGIN:         .DB     0
@@ -1439,12 +1054,6 @@ _AT_CODES:              .DB     $45, $16, $1E, $26, $25, $2E, $36, $3D          
                         .DB     $73, $74, $6C, $75, $7D, $7B, $41, $71          ; row 10
 
 _PALETTE:
-#IF (_WIDTH == 80) | (_WIDTH == 64)
-                        .DB     %00000000
-                        .DB     %01010010
-                        .DB     %10101101
-                        .DB     %11111111
-#ELSE
                         .DB     %00000000
                         .DB     %00000011
                         .DB     %00011000
@@ -1461,37 +1070,9 @@ _PALETTE:
                         .DB     %11010111
                         .DB     %11111011
                         .DB     %11111111
-#ENDIF
 _PALETTE_END:
-
-
-; Color mapping in 4 color modes
-; 0 (black)         -> 0 (black)
-; other             -> 1 (gray)
-; 7 (white)         -> 2 (white)
-; 15 (bright white) -> 3 (bright white)
-
-#IF (_WIDTH == 80) | (_WIDTH == 64)
-_4_COLOR_MAP:
-                        .DB     %00000000
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %10101010
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %01010101
-                        .DB     %11111111
-#ENDIF
 
 PVDP_IDAT:
         .DB     _PORT_RSEL
         .DB     _PORT_RDAT
-        .DB     _PORT_BLIT
+        .DB     _PORT_OP
