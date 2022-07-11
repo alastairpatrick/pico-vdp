@@ -174,7 +174,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
   }
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int text_height) {
+static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, bool hires, int text_height) {
   const Plane* plane = &g_planes[ctx->plane_idx];
   const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
 
@@ -187,7 +187,10 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
   const uint8_t* palette = GetPalette(regs, 0);
 
   static_assert(TEXT_WIDTH * 2 == 16);
-  uint8_t* dest = ctx->dest + (ctx->plane_idx * TEXT_WIDTH) + (core_num * TEXT_WIDTH * 2);
+  uint8_t* dest = ctx->dest + (core_num * TEXT_WIDTH * 2);
+  if (hires) {
+    dest += ctx->plane_idx * TEXT_WIDTH;
+  }
 
   ConfigureInterpolator(1);
 
@@ -203,10 +206,18 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
       palette[name.text.fg_color],
     };
 
-    #pragma GCC unroll 8
-    for (int i = 7; i >= 0; --i) {
-      int color = interp0->pop[1];
-      dest[i] = colors[color];
+    if (hires) {
+      #pragma GCC unroll 8
+      for (int i = 7; i >= 0; --i) {
+        int color = interp0->pop[1];
+        dest[i] = colors[color];
+      }
+    } else {
+      #pragma GCC unroll 8
+      for (int i = 14; i >= 0; i -= 2) {
+        int color = interp0->pop[1];
+        dest[i] = dest[i+1] = colors[color];
+      }
     }
 
     dest += 32;
@@ -223,11 +234,17 @@ static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
   case PLANE_MODE_TILE:
     ScanOutTileMode(ctx, core_num);
     break;
+  case PLANE_MODE_TEXT_40_30:
+    ScanOutTextMode(ctx, core_num, false, 8);
+    break;
+  case PLANE_MODE_TEXT_40_24:
+    ScanOutTextMode(ctx, core_num, false, 10);
+    break;
   case PLANE_MODE_TEXT_80_30:
-    ScanOutTextMode(ctx, core_num, 8);
+    ScanOutTextMode(ctx, core_num, true, 8);
     break;
   case PLANE_MODE_TEXT_80_24:
-    ScanOutTextMode(ctx, core_num, 10);
+    ScanOutTextMode(ctx, core_num, true, 10);
     break;
   }
 }
@@ -277,5 +294,5 @@ void InitScanOut() {
     }
   }
 
-  g_planes[0].regs.plane_mode = g_planes[1].regs.plane_mode = PLANE_MODE_TEXT_80_24;
+  g_planes[0].regs.plane_mode = PLANE_MODE_DISABLE;
 }

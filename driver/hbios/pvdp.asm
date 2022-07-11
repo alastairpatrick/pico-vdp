@@ -1,20 +1,18 @@
 .MODULE PVDP
 
-#define USEFONT8X8
-
 ; Configuration
+_DISPLAY_MODE           .EQU    3
 TERMENABLE      	.SET	TRUE
 _KEY_BUF_SIZE           .EQU    16
 _ENABLE_FIFO            .EQU    1
 _CURSOR_BLINK_PERIOD    .EQU    8
 
 ; Not configuration
-_WIDTH                  .EQU    80
-_HEIGHT                 .EQU    24
 
 _ADDR_FONT              .EQU    $2100
 _ADDR_PALETTE           .EQU    $2080
 _ADDR_REGS              .EQU    $2000
+_ADDR_DISPLAY_MODE      .EQU    _ADDR_REGS + $00
 _ADDR_WINDOW_Y          .EQU    _ADDR_REGS + $02
 _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
@@ -32,6 +30,38 @@ _REG_DEVICE             .EQU    $21
 _REG_KEY_ROWS           .EQU    $80
 _REG_LEDS               .EQU    $08
 _REG_OPERATION          .EQU    $20
+
+#IF _DISPLAY_MODE == 1
+_WIDTH                  .EQU    40
+_HEIGHT                 .EQU    24
+#ENDIF
+
+#IF _DISPLAY_MODE == 2
+_WIDTH                  .EQU    40
+_HEIGHT                 .EQU    30
+#ENDIF
+
+#IF _DISPLAY_MODE == 3
+_WIDTH                  .EQU    80
+_HEIGHT                 .EQU    24
+#ENDIF
+
+#IF _DISPLAY_MODE == 4
+_WIDTH                  .EQU    80
+_HEIGHT                 .EQU    30
+#ENDIF
+
+#IF _WIDTH == 40
+_NUM_DEVICES            .EQU    1
+#ELSE
+_NUM_DEVICES            .EQU    2
+#ENDIF
+
+#IF _HEIGHT == 24
+#DEFINE USEFONT8X10
+#ELSE
+#DEFINE USEFONT8X8
+#ENDIF
 
 PVDP_FNTBL:
 	.DW	PVDP_INIT
@@ -118,11 +148,13 @@ PVDP_RESET:
 
         CALL    LPVDP_INIT
 
-        LD      E, 1
+        LD      E, _NUM_DEVICES-1
 _RESET_DEVICE_LOOP:
         CALL    _RESET_DEVICE
+#IF _NUM_DEVICES > 1
         DEC     E
         JP      P, _RESET_DEVICE_LOOP
+#ENDIF
 
         ; Initial VDA state
         LD      D, $0F
@@ -167,6 +199,12 @@ _RESET_DEVICE:
 
         CALL    _OUTPUT_FONT
 
+        ; Set display mode.
+        LD      DE, _ADDR_DISPLAY_MODE
+        CALL    LPVDP_ADDRESS
+        LD      A, _DISPLAY_MODE
+        CALL    LPVDP_WRITE
+
         POP     HL
         POP     DE
         POP     BC
@@ -186,26 +224,42 @@ _OUTPUT_FONT:
 
         ; Decompress font bitmaps
 	EX	DE, HL
+#IF _HEIGHT == 24
 	LD	HL, FONT8X10
+#ELSE
+	LD	HL, FONT8X8
+#ENDIF
 	CALL	DLZSA2
 
 	POP	HL
 #ELSE
-	LD	HL, FONT8X10		; START OF FONT DATA
+#IF _HEIGHT == 24
+	LD	HL, FONT8X10
+#ELSE
+	LD	HL, FONT8X8
+#ENDIF
 #ENDIF
 
         LD      C, _PORT_OP
         LD      D, 0
 _COPY_FONT_LOOP:
 
+#IF _HEIGHT == 24
         LD      B, 10
+#ELSE
+        LD      B, 8
+#ENDIF
 _COPY_CHAR_LOOP:
         CALL    LPVDP_SYNC
         OUTI
         JR      NZ, _COPY_CHAR_LOOP
         CALL    LPVDP_SYNC
 
+#IF _HEIGHT == 24
         LD      B, 6
+#ELSE
+        LD      B, 8
+#ENDIF
 _COPY_GAP_LOOP:
         CALL    LPVDP_SYNC
         XOR     A
@@ -325,7 +379,9 @@ _WRITE_CHAR:
         PUSH    HL
 
         LD      HL, (_POS)
+#IF _NUM_DEVICES > 1
         CALL    _SELECT_DEVICE
+#ENDIF
         CALL    _SELECT_ADDRESS
 
         LD      A, E
@@ -340,6 +396,7 @@ _WRITE_CHAR:
         POP     BC
         RET
 
+#IF _NUM_DEVICES > 1
 _SELECT_DEVICE:
         PUSH    DE
 
@@ -350,20 +407,28 @@ _SELECT_DEVICE:
 
         POP     DE
         RET
+#ENDIF
 
 _SELECT_ADDRESS:
         PUSH    DE
 
-        ; DE = ((y + _SCROLL) & 63) * 128 + (x & 0xFE)
-
+        ; DE = ((y + _SCROLL) & 63) * 128 + (x & 0xFE) for 80 cols
+        ; DE = ((y + _SCROLL) & 63) * 128 + x * 2      for 40 cols
         LD      A, (_SCROLL)
         ADD     A, H
         AND     $3F
         LD      H, A
 
+#IF _WIDTH == 40
+        LD      A, L
+        SLA     A
+        SLA     A
+#ELSE
         LD      A, L
         AND     $FE
         SLA     A
+#ENDIF
+
         SRL     H
         RRA
         LD      E, A
@@ -452,7 +517,9 @@ _COPY_1_CHAR:
         PUSH    HL
 
         EX      DE, HL
+#IF _NUM_DEVICES > 1
         CALL    _SELECT_DEVICE
+#ENDIF
         CALL    _SELECT_ADDRESS
         CALL    LPVDP_READ
         LD      E, A
@@ -501,7 +568,7 @@ _BACKWARD_LOOP:
 
 _SCROLL_DONE:
 
-        LD      L, 1
+        LD      L, _NUM_DEVICES-1
 _SCROLL_DONE_LOOP:
         LD      E, L
         CALL    LPVDP_DEVICE
@@ -509,8 +576,10 @@ _SCROLL_DONE_LOOP:
         CALL    LPVDP_ADDRESS
         LD      A, (_SCROLL)
         CALL    LPVDP_WRITE
+#IF _NUM_DEVICES > 1
         DEC     L
         JP      P, _SCROLL_DONE_LOOP
+#ENDIF
 
         POP     HL
         POP     DE
