@@ -354,7 +354,13 @@ _SELECT_DEVICE:
 _SELECT_ADDRESS:
         PUSH    DE
 
-        ; DE = y * 128 + (x & 0xFE)
+        ; DE = ((y + _SCROLL) & 63) * 128 + (x & 0xFE)
+
+        LD      A, (_SCROLL)
+        ADD     A, H
+        AND     $3F
+        LD      H, A
+
         LD      A, L
         AND     $FE
         SLA     A
@@ -532,15 +538,16 @@ _SCROLL_BACKWARD:
         LD      HL, 0
 
 _SCROLL_CLEAR:
+        LD      BC, (_POS)
 
+        LD      (_POS), HL
+        LD      HL, _WIDTH
+        LD      E, 0
+        CALL    PVDP_FILL
+
+        LD      (_POS), BC
         RET
 
-
-_SYNC:
-        IN      A, (_PORT_OP)
-        AND     A
-        RET     NZ
-        JR      _SYNC
 
 
 LPVDP_INIT:
