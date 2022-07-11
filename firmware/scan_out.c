@@ -39,16 +39,16 @@ static_assert(sizeof(PlaneRegs) == 256);
 typedef struct {
   union {
     struct {
+      uint16_t tile_idx   : 11;
       uint8_t palette_idx : 3;
       bool flip_x         : 1;
       bool flip_y         : 1;
-      uint16_t tile_idx   : 11;
     } tile;
 
     struct {
-      uint8_t bg_color : 4;
-      uint8_t fg_color : 4;
       uint8_t char_idx : 8;
+      uint8_t fg_color : 4;
+      uint8_t bg_color : 4;
     } text;
   };
 } Name;

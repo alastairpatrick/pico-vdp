@@ -92,12 +92,12 @@ VDA_FNCNT   .EQU  15
 
 #INCLUDE "pvdp.asm"
 
-FONT8X8:
+FONT8X10:
 #IF USELZSA2
-#INCLUDE "font8x10c.asm"
+;#INCLUDE "font8x10c.asm"
 #INCLUDE "unlzsa2s.asm"
 #ELSE
-;#INCLUDE "font8x10c.asm"
+#INCLUDE "font8x10u.asm"
 #ENDIF
 
 .END

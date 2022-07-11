@@ -24,8 +24,10 @@ _FONT_SIZE              .EQU    $800
 
 _OP_STEP_1              .EQU    $10
 _OP_STREAM              .EQU    $03
+_OP_READ                .EQU    $01
 
 _REG_ADDRESS            .EQU    $22
+_REG_DATA               .EQU    $24
 _REG_DEVICE             .EQU    $21
 _REG_KEY_ROWS           .EQU    $80
 _REG_LEDS               .EQU    $08
@@ -114,8 +116,7 @@ PVDP_RESET:
         PUSH    DE
         PUSH    HL
 
-        LD      E, _OP_STREAM + _OP_STEP_1
-        CALL    LPVDP_OPERATION
+        CALL    LPVDP_INIT
 
         LD      E, 1
 _RESET_DEVICE_LOOP:
@@ -185,12 +186,12 @@ _OUTPUT_FONT:
 
         ; Decompress font bitmaps
 	EX	DE, HL
-	LD	HL, FONT8X8
+	LD	HL, FONT8X10
 	CALL	DLZSA2
 
 	POP	HL
 #ELSE
-	LD	HL, FONT8X8		; START OF FONT DATA
+	LD	HL, FONT8X10		; START OF FONT DATA
 #ENDIF
 
         LD      C, _PORT_OP
@@ -299,8 +300,23 @@ PVDP_SET_CHAR_COLOR:
 ;  A: 0
 
 PVDP_WRITE_CHAR:
+        CALL    _CALC_COLOR
+        LD      D, A
         CALL    _WRITE_CHAR
         XOR     A
+        RET
+
+_CALC_COLOR:
+        LD      A, (_ATTRS)
+        AND     $04                     ; reverse color?
+        LD      A, (_COLORS)
+        RET     Z
+
+        ; Exchange color nibbles
+        RLA
+        RLA
+        RLA
+        RLA
         RET
 
 _WRITE_CHAR:
@@ -312,22 +328,11 @@ _WRITE_CHAR:
         CALL    _SELECT_DEVICE
         CALL    _SELECT_ADDRESS
 
-        LD      A, (_ATTRS)
-        AND     $04                     ; reverse color?
-        LD      A, (_COLORS)
-        JR      NZ, _NO_REVERSE_COLOR
-
-        ; Exchange color nibbles
-        RLA
-        RLA
-        RLA
-        RLA
-
-_NO_REVERSE_COLOR:
+        LD      A, E
         OUT     (_PORT_OP), A
         CALL    LPVDP_SYNC
 
-        LD      A, E
+        LD      A, D
         OUT     (_PORT_OP), A
         CALL    _ADVANCE_POS
         CALL    LPVDP_SYNC
@@ -389,6 +394,9 @@ _WC_SKIP_NEWLINE:
 PVDP_FILL:
         PUSH    HL
 
+        CALL    _CALC_COLOR
+        LD      D, A
+
         JR      _FILL_TEST
 _FILL_LOOP:
         CALL    _WRITE_CHAR
@@ -417,7 +425,6 @@ PVDP_COPY:
         LD      B, L
 _COPY_LOOP
         CALL    _COPY_1_CHAR
-        CALL    _ADVANCE_POS
 
         ; Advance source position
         INC     E
@@ -439,6 +446,16 @@ _COPY_1_CHAR:
         PUSH    BC
         PUSH    DE
         PUSH    HL
+
+        EX      DE, HL
+        CALL    _SELECT_DEVICE
+        CALL    _SELECT_ADDRESS
+        CALL    LPVDP_READ
+        LD      E, A
+        CALL    LPVDP_READ_NEXT
+        LD      D, A
+        CALL    LPVDP_END_READ
+        CALL    _WRITE_CHAR
 
         POP     HL
         POP     DE
@@ -524,6 +541,15 @@ _SYNC:
         JR      _SYNC
 
 
+LPVDP_INIT:
+LPVDP_END_READ:
+        LD      A, _REG_OPERATION
+        OUT     (_PORT_RSEL), A
+        LD      A, _OP_STREAM + _OP_STEP_1
+        OUT     (_PORT_RDAT), A
+        RET
+
+
 ; Entry:
 ;  DE: video memory address
 LPVDP_ADDRESS:
@@ -549,14 +575,6 @@ LPVDP_DEVICE:
         OUT     (_PORT_RDAT), A
         RET
 
-; Entry:
-;  E: operation
-LPVDP_OPERATION:
-        LD      A, _REG_OPERATION
-        OUT     (_PORT_RSEL), A
-        LD      A, E
-        OUT     (_PORT_RDAT), A
-        RET
 
 ; Entry:
 ;  BC: number of bytes to fill > 0
@@ -616,6 +634,27 @@ _COPY_RANGE_LOOP:
 
         POP     DE
         POP     BC
+        RET
+
+
+; Exit:
+;  A: read byte
+LPVDP_READ:
+        LD      A, _REG_OPERATION
+        OUT     (_PORT_RSEL), A
+        LD      A, _OP_READ + _OP_STEP_1
+        OUT     (_PORT_RDAT), A
+
+        LD      A, _REG_DATA
+        OUT     (_PORT_RSEL), A
+        ; falls through
+
+; Exit:
+;  A: read byte
+LPVDP_READ_NEXT:
+        OUT     (_PORT_OP), A            ; write dummy byte
+        CALL    LPVDP_SYNC
+        IN      A, (_PORT_RDAT)
         RET
 
 
