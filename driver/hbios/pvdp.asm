@@ -15,7 +15,7 @@ _HEIGHT                 .EQU    24
 _ADDR_FONT              .EQU    $2100
 _ADDR_PALETTE           .EQU    $2080
 _ADDR_REGS              .EQU    $2000
-
+_ADDR_WINDOW_Y          .EQU    _ADDR_REGS + $02
 _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
 _PORT_OP                .EQU    $B2
@@ -155,12 +155,12 @@ _RESET_DEVICE:
         ; Clear names  & regs, up to start address of regs
         LD      BC, _ADDR_PALETTE
         LD      E, 0
-        CALL    LPVDP_SET_RANGE
+        CALL    LPVDP_WRITE_FILL
 
         ; Copy palette 0
         LD      BC, 16
         LD      HL, _PALETTE
-        CALL    LPVDP_COPY_RANGE
+        CALL    LPVDP_WRITE_N
 
         LD      DE, _ADDR_FONT
         CALL    LPVDP_ADDRESS
@@ -329,13 +329,11 @@ _WRITE_CHAR:
         CALL    _SELECT_ADDRESS
 
         LD      A, E
-        OUT     (_PORT_OP), A
-        CALL    LPVDP_SYNC
+        CALL    LPVDP_WRITE
 
         LD      A, D
-        OUT     (_PORT_OP), A
+        CALL    LPVDP_WRITE
         CALL    _ADVANCE_POS
-        CALL    LPVDP_SYNC
 
         POP     HL
         POP     DE
@@ -497,6 +495,17 @@ _BACKWARD_LOOP:
 
 _SCROLL_DONE:
 
+        LD      L, 1
+_SCROLL_DONE_LOOP:
+        LD      E, L
+        CALL    LPVDP_DEVICE
+        LD      DE, _ADDR_WINDOW_Y
+        CALL    LPVDP_ADDRESS
+        LD      A, (_SCROLL)
+        CALL    LPVDP_WRITE
+        DEC     L
+        JP      P, _SCROLL_DONE_LOOP
+
         POP     HL
         POP     DE
         POP     BC
@@ -507,10 +516,6 @@ _SCROLL_FORWARD:
         ; Update _SCROLL
         LD      A, (_SCROLL)
         INC     A
-        CP      _HEIGHT
-        JR      NZ, _NO_SCROLL_FORWARD_WRAP
-        XOR     A
-_NO_SCROLL_FORWARD_WRAP:        
         LD      (_SCROLL), A
 
         ; Bottom row
@@ -521,9 +526,6 @@ _SCROLL_BACKWARD:
         ; Update SCROLL
         LD      A, (_SCROLL)
         DEC     A
-        JP      P, _NO_SCROLL_BACKWARD_WRAP
-        LD      A, _HEIGHT-1
-_NO_SCROLL_BACKWARD_WRAP:
         LD      (_SCROLL), A
 
         ; Top row
@@ -576,10 +578,19 @@ LPVDP_DEVICE:
         RET
 
 
+LPVDP_WRITE:
+        OUT     (_PORT_OP), A
+LPVDP_SYNC:
+        IN      A, (_PORT_OP)
+        AND     A
+        RET     NZ
+        JR      LPVDP_SYNC
+
+
 ; Entry:
 ;  BC: number of bytes to fill > 0
 ;  E: fill byte
-LPVDP_SET_RANGE:
+LPVDP_WRITE_FILL:
         PUSH    BC
         PUSH    DE
 
@@ -610,7 +621,7 @@ _SET_RANGE_LOOP:
 ;  HL: address of source data
 ; Exit:
 ;  HL: input HL+BC
-LPVDP_COPY_RANGE:
+LPVDP_WRITE_N:
         PUSH    BC
         PUSH    DE
 
@@ -656,13 +667,6 @@ LPVDP_READ_NEXT:
         CALL    LPVDP_SYNC
         IN      A, (_PORT_RDAT)
         RET
-
-
-LPVDP_SYNC:
-        IN      A, (_PORT_OP)
-        AND     A
-        RET     NZ
-        JR      LPVDP_SYNC
 
 
 
