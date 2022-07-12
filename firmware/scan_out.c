@@ -8,6 +8,7 @@
 
 #include "scan_out.h"
 
+#include "common.h"
 #include "parallel.h"
 #include "section.h"
 #include "sys80.h"
@@ -19,7 +20,7 @@
 #define PLANE_HEIGHT 64
 #define NUM_PALETTES 8
 #define PALETTE_SIZE 16
-#define NAM_PLANES 2
+#define NUM_PLANES 2
 
 #define TILE_SIZE 8
 #define TILE_WORDS 8
@@ -33,11 +34,7 @@
 typedef struct {
   PlaneMode plane_mode :8;                        // 1 bytes
   uint8_t window_x, window_y;                     // 2 bytes
-  uint8_t pad[125];
-  uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
 } PlaneRegs;
-
-static_assert(sizeof(PlaneRegs) == 256);
 
 typedef struct {
   union {
@@ -61,8 +58,10 @@ static_assert(sizeof(Name) == 2);
 typedef struct {
   union {
     struct {
-      Name names[PLANE_WIDTH * PLANE_HEIGHT]; // 3840 bytes
-      PlaneRegs regs;                         // 256 bytes
+      Name names[PLANE_WIDTH * PLANE_HEIGHT];         // 3840 bytes
+      PlaneRegs regs;                                 // 128 bytes
+      uint8_t pad[128 - sizeof(PlaneRegs)];
+      uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
       uint8_t chars[256 * CHAR_BYTES];
     };
     uint8_t bytes[65536];
@@ -71,11 +70,7 @@ typedef struct {
 } Plane;
 
 typedef struct {
-  uint8_t pad[128];
-  uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
 } SpriteRegs;
-
-static_assert(sizeof(SpriteRegs) == 256);
 
 typedef struct {
   int16_t x: 10;
@@ -103,7 +98,9 @@ static int g_pending_sprite_idx;
 typedef struct {
   union {
     struct {
-      SpriteRegs regs;
+      SpriteRegs regs;                                // 128 bytes
+      uint8_t pad[128 - sizeof(SpriteRegs)];
+      uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
       Sprite sprites[256];
     };
     uint8_t bytes[65536];
@@ -113,8 +110,9 @@ typedef struct {
 
 static_assert(sizeof(SpriteLayer) == 65536);
 
-static Plane g_planes[NAM_PLANES];
-static PlaneRegs g_plane_regs[NAM_PLANES];
+static Plane g_planes[NUM_PLANES];
+static PlaneRegs g_plane_regs[NUM_PLANES];
+static uint16_t g_plane_palettes[NUM_PLANES][NUM_PALETTES][PALETTE_SIZE];
 
 static SpriteLayer g_sprite_layer;
 static uint16_t g_sprite_palettes[NUM_PALETTES][PALETTE_SIZE];
@@ -173,10 +171,6 @@ static SCAN_OUT_INNER_SECTION int GetChar(const Plane* plane, int idx) {
   return plane->chars[idx & (count_of(plane->chars) - 1)];
 }
 
-static SCAN_OUT_INNER_SECTION const uint8_t* GetPalette(const PlaneRegs* regs, int idx) {
-  return regs->palettes[idx & (count_of(regs->palettes) - 1)];
-}
-
 typedef struct {
   ParallelContext parallel;
   uint8_t* dest;
@@ -200,7 +194,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
     Name name = GetName(plane, source_idx);
     source_idx += NUM_CORES;
 
-    const uint8_t* palette = GetPalette(regs, name.tile.palette_idx);
+    const uint16_t* palette = g_plane_palettes[plane_idx][name.tile.palette_idx & (NUM_PALETTES-1)];
 
     int flipped_pattern_y = pattern_y;
     if (name.tile.flip_y) {
@@ -230,7 +224,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
 
   int source_idx = (char_y * PLANE_WIDTH) + regs->window_x + core_num;
 
-  const uint8_t* palette = GetPalette(regs, 0);
+  const uint16_t* palette = g_plane_palettes[plane_idx][0];
 
   static_assert(TEXT_WIDTH * 2 == 16);
   uint8_t* dest = ctx->dest + (core_num * TEXT_WIDTH * 2);
@@ -332,7 +326,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
 
 static void STRIPED_SECTION ScanOutPlanes(const void* cc, int core_num) {
   const PlaneContext* ctx = cc;
-  for (int i = 0; i < NAM_PLANES; ++i) {
+  for (int i = 0; i < NUM_PLANES; ++i) {
     const PlaneRegs* regs = &g_plane_regs[i];
 
     switch (regs->plane_mode) {
@@ -365,17 +359,23 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
   }
 }
 
-void STRIPED_SECTION ScanOutBeginDisplay() {
-  for (int i = 0; i < NAM_PLANES; ++i) {
-    g_plane_regs[i] = g_planes[i].regs;
-  }
-  
-  for (int i = 0; i < NUM_PALETTES; ++i) {
+static void STRIPED_SECTION DoublePalettes(uint16_t dest[][PALETTE_SIZE], uint8_t source[][PALETTE_SIZE], int num) {
+  for (int i = 0; i < num; ++i) {
     for (int j = 0; j < PALETTE_SIZE; ++j) {
-      int rgb = g_sprite_layer.regs.palettes[i][j];
-      g_sprite_palettes[i][j] = (rgb << 8) | rgb;
+      int rgb = source[i][j];
+      dest[i][j] = (rgb << 8) | rgb;
     }
   }
+}
+
+void STRIPED_SECTION ScanOutBeginDisplay() {
+  for (int i = 0; i < NUM_PLANES; ++i) {
+    g_plane_regs[i] = g_planes[i].regs;
+
+    DoublePalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
+  }
+  
+  DoublePalettes(g_sprite_palettes, g_sprite_layer.palettes, NUM_PALETTES);
 
   g_pending_sprite_idx = 0;
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
@@ -416,7 +416,7 @@ void InitScanOut() {
   }
 
   for (int i = 0; i < 16; ++i) {
-    g_planes[0].regs.palettes[0][i] = g_planes[1].regs.palettes[0][i] = rand();
+    g_planes[0].palettes[0][i] = g_planes[1].palettes[0][i] = rand();
   }
 
   for (int i = 0; i < count_of(g_planes->names); ++i) {
