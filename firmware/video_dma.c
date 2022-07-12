@@ -20,7 +20,7 @@
 #define MAX_HORZ_DISPLAY_RES 1024
 #define MAX_VERT_RES 806
 #define DISPLAY_LINE_COUNT 2
-#define DISPLAY_GUARD 16
+#define DISPLAY_GUARD 64
 
 #define DMA_IRQ_IDX 0
 #define PIO pio0

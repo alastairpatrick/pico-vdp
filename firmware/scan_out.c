@@ -117,7 +117,7 @@ static Plane g_planes[NAM_PLANES];
 static PlaneRegs g_plane_regs[NAM_PLANES];
 
 static SpriteLayer g_sprite_layer;
-static SpriteRegs g_sprite_regs;
+static uint16_t g_sprite_palettes[NUM_PALETTES][PALETTE_SIZE];
 
 int STRIPED_SECTION ReadVideoMemByte(int device, int address) {
   switch (device) {
@@ -290,13 +290,15 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
         continue;
       if (active->sprite.y > y)
         continue;
+      if (active->sprite.x <= -32 || active->sprite.x >= 320)
+        continue;
 
       int width = active->sprite.width ? 4 : 2;
       const uint32_t* src = g_sprite_layer.images + active->sprite.image_addr + width * (y - active->sprite.y);
       width *= 8; // 16 or 32
 
-      const uint8_t *palette = g_sprite_layer.regs.palettes[active->sprite.palette_idx];
-      uint8_t* dest = ctx->dest + 2 * active->sprite.x;
+      const uint16_t *palette = g_sprite_palettes[active->sprite.palette_idx];
+      uint16_t* dest = ((uint16_t*) ctx->dest) + active->sprite.x;
 
       int x = (active->sprite.x & (NUM_CORES-1)) ^ core_num;
       if (active->sprite.transparent) {
@@ -304,10 +306,10 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
           interp0->accum[0] = (*src++) >> (core_num * 4);
 
           #pragma GCC unroll 4
-          for (int i = 14; i >= 0; i -= 4) {
+          for (int i = 6; i >= 0; i -= 2) {
             int color = interp0->pop[1];
             if (color != 0) {
-              dest[x*2 + i] = dest[x*2 + i + 1] = palette[color];
+              dest[x + i] = palette[color];
             }
           }
         }
@@ -316,9 +318,9 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
           interp0->accum[0] = (*src++) >> (core_num * 4);
 
           #pragma GCC unroll 4
-          for (int i = 14; i >= 0; i -= 4) {
+          for (int i = 6; i >= 0; i -= 2) {
             int color = interp0->pop[1];
-            dest[x*2 + i] = dest[x*2 + i + 1] = palette[color];
+            dest[x + i] = palette[color];
           }
         }
       }
@@ -367,12 +369,18 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   for (int i = 0; i < NAM_PLANES; ++i) {
     g_plane_regs[i] = g_planes[i].regs;
   }
-  g_sprite_regs = g_sprite_layer.regs;
+  
+  for (int i = 0; i < NUM_PALETTES; ++i) {
+    for (int j = 0; j < PALETTE_SIZE; ++j) {
+      int rgb = g_sprite_layer.regs.palettes[i][j];
+      g_sprite_palettes[i][j] = (rgb << 8) | rgb;
+    }
+  }
 
   g_pending_sprite_idx = 0;
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
     g_active_sprites[i].sprite.y = -1;
-    g_active_sprites[i].sprite.height = 1;
+    g_active_sprites[i].sprite.height = 0;
   }
 }
 
