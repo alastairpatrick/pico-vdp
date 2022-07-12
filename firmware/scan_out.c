@@ -27,6 +27,9 @@
 #define TEXT_WIDTH 8
 #define CHAR_BYTES 16
 
+#define NUM_ACTIVE_SPRITES 8
+#define NUM_SPRITE_PRIORITIES 4
+
 typedef struct {
   PlaneMode plane_mode :8;                        // 1 bytes
   uint8_t window_x, window_y;                     // 2 bytes
@@ -67,10 +70,54 @@ typedef struct {
   };
 } Plane;
 
-static_assert(sizeof(Plane) == 65536);
+typedef struct {
+  uint8_t pad[128];
+  uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
+} SpriteRegs;
+
+static_assert(sizeof(SpriteRegs) == 256);
+
+typedef struct {
+  int16_t x: 10;
+  int16_t y: 9;
+
+  uint8_t height;  // height + 1
+
+  uint8_t width: 1;   // 0->16 or 1->32
+  uint8_t priority: 2;
+  bool transparent: 1;
+  uint8_t palette_idx: 3;
+
+  uint16_t image_addr: 14;
+} Sprite;
+
+static_assert(sizeof(Sprite) == 8);
+
+typedef struct {
+  Sprite sprite;
+} ActiveSprite;
+
+static ActiveSprite g_active_sprites[NUM_ACTIVE_SPRITES];
+static int g_pending_sprite_idx;
+
+typedef struct {
+  union {
+    struct {
+      SpriteRegs regs;
+      Sprite sprites[256];
+    };
+    uint8_t bytes[65536];
+    uint32_t images[65536 / sizeof(uint32_t)];
+  };
+} SpriteLayer;
+
+static_assert(sizeof(SpriteLayer) == 65536);
 
 static Plane g_planes[NAM_PLANES];
 static PlaneRegs g_plane_regs[NAM_PLANES];
+
+static SpriteLayer g_sprite_layer;
+static SpriteRegs g_sprite_regs;
 
 int STRIPED_SECTION ReadVideoMemByte(int device, int address) {
   switch (device) {
@@ -99,7 +146,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_
   }
 }
 
-static void STRIPED_SECTION ConfigureInterpolator(int shift_bits) {
+static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_bits) {
   interp_config cfg;
   
   cfg = interp_default_config();
@@ -109,17 +156,10 @@ static void STRIPED_SECTION ConfigureInterpolator(int shift_bits) {
 
   cfg = interp_default_config();
   interp_config_set_cross_input(&cfg, true);
-  interp_config_set_mask(&cfg, 0, shift_bits - 1);
+  interp_config_set_mask(&cfg, 0, mask_bits - 1);
   interp_set_config(interp0, 1, &cfg);
   interp_set_config(interp1, 1, &cfg);
 }
-
-typedef struct {
-  ParallelContext parallel;
-  uint8_t* dest;
-  int plane_idx;
-  int y;
-} PlaneContext;
 
 static SCAN_OUT_INNER_SECTION Name GetName(const Plane* plane, int idx) {
   return plane->names[idx & (count_of(plane->names) - 1)];
@@ -137,9 +177,15 @@ static SCAN_OUT_INNER_SECTION const uint8_t* GetPalette(const PlaneRegs* regs, i
   return regs->palettes[idx & (count_of(regs->palettes) - 1)];
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num) {
-  const Plane* plane = &g_planes[ctx->plane_idx];
-  const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
+typedef struct {
+  ParallelContext parallel;
+  uint8_t* dest;
+  int y;
+} PlaneContext;
+
+static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num, int plane_idx) {
+  const Plane* plane = &g_planes[plane_idx];
+  const PlaneRegs* regs = &g_plane_regs[plane_idx];
   int y = ctx->y + regs->window_y;
   int pattern_y = y & (TILE_SIZE-1);
   
@@ -148,7 +194,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
   static_assert(TILE_SIZE * 2 == 16);
   uint8_t* dest = ctx->dest - (regs->window_x & (TILE_SIZE-1)) + (core_num * TILE_SIZE * 2);
 
-  ConfigureInterpolator(4);
+  ConfigureInterpolator(4, 4);
 
   for (int c = 0; c < 41; c += NUM_CORES) {
     Name name = GetName(plane, source_idx);
@@ -174,9 +220,9 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
   }
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, bool hires, int text_height) {
-  const Plane* plane = &g_planes[ctx->plane_idx];
-  const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
+static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int plane_idx, bool hires, int text_height) {
+  const Plane* plane = &g_planes[plane_idx];
+  const PlaneRegs* regs = &g_plane_regs[plane_idx];
 
   int y = ctx->y + regs->window_y * text_height;
   int32_t pattern_y = y % text_height;
@@ -189,10 +235,10 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
   static_assert(TEXT_WIDTH * 2 == 16);
   uint8_t* dest = ctx->dest + (core_num * TEXT_WIDTH * 2);
   if (hires) {
-    dest += ctx->plane_idx * TEXT_WIDTH;
+    dest += plane_idx * TEXT_WIDTH;
   }
 
-  ConfigureInterpolator(1);
+  ConfigureInterpolator(1, 1);
 
   for (int c = 0; c < 41; c += NUM_CORES) {
     Name name = GetName(plane, source_idx);
@@ -224,28 +270,96 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
   }
 }
 
+
+typedef struct {
+  ParallelContext parallel;
+  uint8_t* dest;
+  int y;
+} SpriteContext;
+
+static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) {
+  const SpriteContext* ctx = cc;
+  int y = ctx->y;
+
+  ConfigureInterpolator(4 * NUM_CORES, 4);
+
+  for (int priority = NUM_SPRITE_PRIORITIES - 1; priority > 0; --priority) {
+    for (int j = 0; j < count_of(g_active_sprites); ++j) {
+      const ActiveSprite* active = &g_active_sprites[j];
+      if (active->sprite.priority != priority)
+        continue;
+      if (active->sprite.y > y)
+        continue;
+
+      int width = active->sprite.width ? 4 : 2;
+      const uint32_t* src = g_sprite_layer.images + active->sprite.image_addr + width * (y - active->sprite.y);
+      width *= 8; // 16 or 32
+
+      const uint8_t *palette = g_sprite_layer.regs.palettes[active->sprite.palette_idx];
+      uint8_t* dest = ctx->dest + 2 * active->sprite.x;
+
+      int x = (active->sprite.x & (NUM_CORES-1)) ^ core_num;
+      if (active->sprite.transparent) {
+        for (; x < width; x += 8) {
+          interp0->accum[0] = (*src++) >> (core_num * 4);
+
+          #pragma GCC unroll 4
+          for (int i = 14; i >= 0; i -= 4) {
+            int color = interp0->pop[1];
+            if (color != 0) {
+              dest[x*2 + i] = dest[x*2 + i + 1] = palette[color];
+            }
+          }
+        }
+      } else {
+        for (; x < width; x += 8) {
+          interp0->accum[0] = (*src++) >> (core_num * 4);
+
+          #pragma GCC unroll 4
+          for (int i = 14; i >= 0; i -= 4) {
+            int color = interp0->pop[1];
+            dest[x*2 + i] = dest[x*2 + i + 1] = palette[color];
+          }
+        }
+      }
+    }
+  }
+}
+
 #pragma GCC pop_options
 
-static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
+static void STRIPED_SECTION ScanOutPlanes(const void* cc, int core_num) {
   const PlaneContext* ctx = cc;
-  const PlaneRegs* regs = &g_plane_regs[ctx->plane_idx];
+  for (int i = 0; i < NAM_PLANES; ++i) {
+    const PlaneRegs* regs = &g_plane_regs[i];
 
-  switch (regs->plane_mode) {
-  case PLANE_MODE_TILE:
-    ScanOutTileMode(ctx, core_num);
-    break;
-  case PLANE_MODE_TEXT_40_30:
-    ScanOutTextMode(ctx, core_num, false, 8);
-    break;
-  case PLANE_MODE_TEXT_40_24:
-    ScanOutTextMode(ctx, core_num, false, 10);
-    break;
-  case PLANE_MODE_TEXT_80_30:
-    ScanOutTextMode(ctx, core_num, true, 8);
-    break;
-  case PLANE_MODE_TEXT_80_24:
-    ScanOutTextMode(ctx, core_num, true, 10);
-    break;
+    switch (regs->plane_mode) {
+    case PLANE_MODE_TILE:
+      ScanOutTileMode(ctx, core_num, i);
+      break;
+    case PLANE_MODE_TEXT_40_30:
+      ScanOutTextMode(ctx, core_num, i, false, 8);
+      break;
+    case PLANE_MODE_TEXT_40_24:
+      ScanOutTextMode(ctx, core_num, i, false, 10);
+      break;
+    case PLANE_MODE_TEXT_80_30:
+      ScanOutTextMode(ctx, core_num, i, true, 8);
+      break;
+    case PLANE_MODE_TEXT_80_24:
+      ScanOutTextMode(ctx, core_num, i, true, 10);
+      break;
+    }
+  }
+}
+
+static void STRIPED_SECTION UpdateActiveSprites(int y) {
+  for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
+    ActiveSprite *active = &g_active_sprites[i];
+
+    if (y > active->sprite.y + active->sprite.height) {
+      active->sprite = g_sprite_layer.sprites[g_pending_sprite_idx++];
+    }
   }
 }
 
@@ -253,21 +367,35 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   for (int i = 0; i < NAM_PLANES; ++i) {
     g_plane_regs[i] = g_planes[i].regs;
   }
+  g_sprite_regs = g_sprite_layer.regs;
+
+  g_pending_sprite_idx = 0;
+  for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
+    g_active_sprites[i].sprite.y = -1;
+    g_active_sprites[i].sprite.height = 1;
+  }
 }
 
 void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   g_sys80_regs.current_y = y;
 
-  for (int i = 0; i < NAM_PLANES; ++i) {
-    PlaneContext ctx = {
-      .parallel.entry = ScanOutPlane,
-      .plane_idx = i,
-      .dest = dest,
-      .y = y,
-    };
+  PlaneContext plane_ctx = {
+    .parallel.entry = ScanOutPlanes,
+    .dest = dest,
+    .y = y,
+  };
 
-    Parallel(&ctx);
-  }
+  Parallel(&plane_ctx);
+
+  UpdateActiveSprites(y);
+
+  SpriteContext sprite_ctx = {
+    .parallel.entry = ScanOutSprites,
+    .dest = dest,
+    .y = y,
+  };
+
+  Parallel(&sprite_ctx);
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {
@@ -294,5 +422,27 @@ void InitScanOut() {
     }
   }
 
-  g_planes[0].regs.plane_mode = PLANE_MODE_DISABLE;
+  g_planes[0].regs.plane_mode = PLANE_MODE_TILE;
+  g_planes[1].regs.plane_mode = PLANE_MODE_TILE;
+
+  memset(g_sprite_layer.bytes, 0x11, sizeof(g_sprite_layer.bytes));
+
+  int i = 0;
+  for (int y = 0; y < 8; ++y) {
+    for (int x = 0; x < 8; ++x) {
+      Sprite* sprite = &g_sprite_layer.sprites[i];
+      sprite->height = 31;
+      sprite->priority = 1;
+      sprite->width = 1;
+      sprite->x = x * 35;
+      sprite->y = y * 35 + x;
+      ++i;
+    }
+  }
+
+  for (; i < count_of(g_sprite_layer.sprites); ++i) {
+    Sprite* sprite = &g_sprite_layer.sprites[i];
+    sprite->y = -1;
+    sprite->height = 1;
+  }
 }

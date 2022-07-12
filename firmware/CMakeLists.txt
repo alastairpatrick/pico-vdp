@@ -26,7 +26,7 @@ add_executable(firmware
 )
 
 target_compile_definitions(firmware PRIVATE
-  PICOVDP_OVERCLOCK=1
+  PICOVDP_OVERCLOCK=0
   PICOVDP_ENABLE_AUDIO=0
   PICOVDP_ENABLE_DUAL_AUDIO=0
   PICOVDP_MONITOR_SUPPLY=1

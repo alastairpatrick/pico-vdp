@@ -173,11 +173,11 @@ static void InitControlBlocks() {
   DMAControlBlock* control = g_dma_control_blocks;
 
   int irq_count = 0;
-  int irq_total = vert->display_pixels >> g_vert_shift;
+  int irq_total = (vert->display_pixels >> g_vert_shift) + 1;
 
   int vert_reps = 1 << g_vert_shift;
   for (int y = 0; y < vert->back_porch_pixels; ++y) {
-    if (y == (vert->back_porch_pixels - 1) || y == (vert->back_porch_pixels - vert_reps - 1)) {
+    if (y == (vert->back_porch_pixels - 1) || y == (vert->back_porch_pixels - vert_reps - 1) || y == (vert->back_porch_pixels - 2*vert_reps - 1)) {
       *control++ = MakeControlBlock(vporch_irq_cmds, count_of(vporch_cmds));
       ++irq_count;
     } else {
@@ -216,7 +216,7 @@ static void InitControlBlocks() {
 }
 
 void STRIPED_SECTION StartVideo() {
-  g_logical_y = 0;
+  g_logical_y = -1;
   dma_channel_set_read_addr(g_dma_ctrl_chan, g_dma_control_blocks, true);
 }
 
@@ -230,17 +230,17 @@ static void STRIPED_SECTION FrameISR() {
 static void STRIPED_SECTION LineISR() {
   pio_interrupt_clear(PIO, 0);
 
-  if (g_logical_y == 0) {
+  if (g_logical_y == -1) {
     ScanOutBeginDisplay();
+  } else {
+    int logical_width = g_timing.horz.display_pixels >> g_horz_shift;
+    ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, logical_width);
+
+    if (g_logical_y == (g_timing.vert.display_pixels >> g_vert_shift) - 1) {
+      ScanOutEndDisplay();
+    }
   }
-
-  int logical_width = g_timing.horz.display_pixels >> g_horz_shift;
-  ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, logical_width);
-
-  if (g_logical_y == (g_timing.vert.display_pixels >> g_vert_shift) - 1) {
-    ScanOutEndDisplay();
-  }
-
+  
   ++g_logical_y;
 }
 
