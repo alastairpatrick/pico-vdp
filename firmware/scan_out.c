@@ -39,10 +39,10 @@ typedef struct {
 typedef struct {
   union {
     struct {
-      uint16_t tile_idx   : 11;
       uint8_t palette_idx : 3;
       bool flip_x         : 1;
       bool flip_y         : 1;
+      uint16_t tile_idx   : 11;
     } tile;
 
     struct {
@@ -110,12 +110,14 @@ typedef struct {
 
 static_assert(sizeof(SpriteLayer) == 65536);
 
+typedef uint16_t Palette16[PALETTE_SIZE];
+
 static Plane g_planes[NUM_PLANES];
 static PlaneRegs g_plane_regs[NUM_PLANES];
-static uint16_t g_plane_palettes[NUM_PLANES][NUM_PALETTES][PALETTE_SIZE];
+static Palette16 g_plane_palettes[NUM_PLANES][NUM_PALETTES];
 
 static SpriteLayer g_sprite_layer;
-static uint16_t g_sprite_palettes[NUM_PALETTES][PALETTE_SIZE];
+static Palette16 g_sprite_palettes[NUM_PALETTES];
 
 int STRIPED_SECTION ReadVideoMemByte(int device, int address) {
   switch (device) {
@@ -144,19 +146,20 @@ static void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_
   }
 }
 
-static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_bits) {
+static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_bits, bool sign_extend) {
   interp_config cfg;
   
   cfg = interp_default_config();
   interp_config_set_shift(&cfg, shift_bits);
   interp_set_config(interp0, 0, &cfg);
-  interp_set_config(interp1, 0, &cfg);
-
+  
   cfg = interp_default_config();
   interp_config_set_cross_input(&cfg, true);
   interp_config_set_mask(&cfg, 0, mask_bits - 1);
+  interp_config_set_signed(&cfg, sign_extend);
   interp_set_config(interp0, 1, &cfg);
-  interp_set_config(interp1, 1, &cfg);
+  
+  interp0->base[1] = 0;
 }
 
 static SCAN_OUT_INNER_SECTION Name GetName(const Plane* plane, int idx) {
@@ -169,6 +172,26 @@ static SCAN_OUT_INNER_SECTION uint32_t GetTile(const Plane* plane, int idx) {
 
 static SCAN_OUT_INNER_SECTION int GetChar(const Plane* plane, int idx) {
   return plane->chars[idx & (count_of(plane->chars) - 1)];
+}
+
+static void SCAN_OUT_INNER_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
+  // This is the proper way to do type punning but even with -O3 it still generates a call to memcpy()
+  //memcpy(dest, &rgb, 2);
+
+  // Incorrect type punning.
+  *(uint16_t*) dest = rgb;
+}
+
+static int SCAN_OUT_INNER_SECTION PreparePalette(const uint16_t* palette) {
+  int half_palette = ((int) palette) >> 1;
+  interp0->base[1] = half_palette;
+  return half_palette;
+}
+
+static int SCAN_OUT_INNER_SECTION LookupPalette(int color) {
+  int rgb;
+  asm ("LDRH %0, [%1, %1]" : "=l" (rgb) : "l" (color));
+  return rgb;
 }
 
 typedef struct {
@@ -188,28 +211,39 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
   static_assert(TILE_SIZE * 2 == 16);
   uint8_t* dest = ctx->dest - (regs->window_x & (TILE_SIZE-1)) + (core_num * TILE_SIZE * 2);
 
-  ConfigureInterpolator(4, 4);
+  const Palette16* palette = g_plane_palettes[plane_idx];
+  
+  ConfigureInterpolator(4, 4, false);
 
   for (int c = 0; c < 41; c += NUM_CORES) {
     Name name = GetName(plane, source_idx);
     source_idx += NUM_CORES;
 
-    const uint16_t* palette = g_plane_palettes[plane_idx][name.tile.palette_idx & (NUM_PALETTES-1)];
+    int transparent = PreparePalette(palette[name.tile.palette_idx & (NUM_PALETTES-1)]);
 
     int flipped_pattern_y = pattern_y;
-    if (name.tile.flip_y) {
-      flipped_pattern_y = (TILE_SIZE-1) - flipped_pattern_y;
-    }
+    //if (name.tile.flip_y) {
+    //  flipped_pattern_y = (TILE_SIZE-1) - flipped_pattern_y;
+    //}
 
     int tile_idx = name.tile.tile_idx;
     interp0->accum[0] = GetTile(plane, tile_idx * TILE_WORDS + flipped_pattern_y);
 
-    #pragma GCC unroll 8
-    for (int i = 0; i < 16; i += 2) {
-      int color = interp0->pop[1];
-      dest[i] = dest[i+1] = palette[color];
+    if (plane_idx) {
+      #pragma GCC unroll 8
+      for (int i = 0; i < 16; i += 2) {
+        int color = interp0->pop[1];
+        if (color != transparent) {
+          WriteDoublePixel(dest + i, LookupPalette(color));
+        }
+      }
+    } else {
+      #pragma GCC unroll 8
+      for (int i = 0; i < 16; i += 2) {
+        int color = interp0->pop[1];
+        WriteDoublePixel(dest + i, LookupPalette(color));
+      }
     }
-
     dest += 32;
   }
 }
@@ -232,35 +266,49 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
     dest += plane_idx * TEXT_WIDTH;
   }
 
-  ConfigureInterpolator(1, 1);
+  ConfigureInterpolator(1, 1, false);
 
-  for (int c = 0; c < 41; c += NUM_CORES) {
-    Name name = GetName(plane, source_idx);
-    source_idx += NUM_CORES;
+  if (hires) {
+    for (int c = 0; c < 41; c += NUM_CORES) {
+      Name name = GetName(plane, source_idx);
+      source_idx += NUM_CORES;
 
-    int char_idx = name.text.char_idx;
-    interp0->accum[0] = GetChar(plane, char_idx * CHAR_BYTES + pattern_y);
+      int char_idx = name.text.char_idx;
+      interp0->accum[0] = GetChar(plane, char_idx * CHAR_BYTES + pattern_y);
 
-    uint8_t colors[2] = {
-      palette[name.text.bg_color],
-      palette[name.text.fg_color],
-    };
+      uint8_t local_palette[] = {
+        palette[name.text.bg_color],
+        palette[name.text.fg_color],
+      };
 
-    if (hires) {
       #pragma GCC unroll 8
       for (int i = 7; i >= 0; --i) {
-        int color = interp0->pop[1];
-        dest[i] = colors[color];
+        dest[i] = local_palette[interp0->pop[1]];
       }
-    } else {
+
+      dest += 32;
+    }
+  } else {
+    for (int c = 0; c < 41; c += NUM_CORES) {
+      Name name = GetName(plane, source_idx);
+      source_idx += NUM_CORES;
+
+      int char_idx = name.text.char_idx;
+      interp0->accum[0] = GetChar(plane, char_idx * CHAR_BYTES + pattern_y);
+
+      uint16_t local_palette[] = {
+        palette[name.text.bg_color],
+        palette[name.text.fg_color],
+      };
+
       #pragma GCC unroll 8
       for (int i = 14; i >= 0; i -= 2) {
-        int color = interp0->pop[1];
-        dest[i] = dest[i+1] = colors[color];
+        int color = local_palette[interp0->pop[1]];
+        WriteDoublePixel(dest + i, color);
       }
-    }
 
-    dest += 32;
+      dest += 32;
+    }
   }
 }
 
@@ -275,7 +323,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
   const SpriteContext* ctx = cc;
   int y = ctx->y;
 
-  ConfigureInterpolator(4 * NUM_CORES, 4);
+  ConfigureInterpolator(4 * NUM_CORES, 4, false);
 
   for (int priority = NUM_SPRITE_PRIORITIES - 1; priority > 0; --priority) {
     for (int j = 0; j < count_of(g_active_sprites); ++j) {
@@ -291,30 +339,22 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
       const uint32_t* src = g_sprite_layer.images + active->sprite.image_addr + width * (y - active->sprite.y);
       width *= 8; // 16 or 32
 
-      const uint16_t *palette = g_sprite_palettes[active->sprite.palette_idx];
+      int transparent = PreparePalette(g_sprite_palettes[active->sprite.palette_idx]);
+      if (!active->sprite.transparent) {
+        transparent = -1;
+      }
+
       uint16_t* dest = ((uint16_t*) ctx->dest) + active->sprite.x;
 
       int x = (active->sprite.x & (NUM_CORES-1)) ^ core_num;
-      if (active->sprite.transparent) {
-        for (; x < width; x += 8) {
-          interp0->accum[0] = (*src++) >> (core_num * 4);
+      for (; x < width; x += 8) {
+        interp0->accum[0] = (*src++) >> (core_num * 4);
 
-          #pragma GCC unroll 4
-          for (int i = 6; i >= 0; i -= 2) {
-            int color = interp0->pop[1];
-            if (color != 0) {
-              dest[x + i] = palette[color];
-            }
-          }
-        }
-      } else {
-        for (; x < width; x += 8) {
-          interp0->accum[0] = (*src++) >> (core_num * 4);
-
-          #pragma GCC unroll 4
-          for (int i = 6; i >= 0; i -= 2) {
-            int color = interp0->pop[1];
-            dest[x + i] = palette[color];
+        #pragma GCC unroll 4
+        for (int i = 6; i >= 0; i -= 2) {
+          int color = interp0->pop[1];
+          if (color != transparent) {
+            dest[x + i] = LookupPalette(color);
           }
         }
       }
@@ -359,7 +399,7 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
   }
 }
 
-static void STRIPED_SECTION DoublePalettes(uint16_t dest[][PALETTE_SIZE], uint8_t source[][PALETTE_SIZE], int num) {
+static void STRIPED_SECTION DoublePalettes(Palette16 dest[], uint8_t source[][PALETTE_SIZE], int num) {
   for (int i = 0; i < num; ++i) {
     for (int j = 0; j < PALETTE_SIZE; ++j) {
       int rgb = source[i][j];
@@ -412,7 +452,7 @@ void STRIPED_SECTION ScanOutEndDisplay() {
 void InitScanOut() {
   for (int i = 0; i < count_of(g_planes->chars); ++i) {
     g_planes[0].chars[i] = rand();
-    g_planes[1].chars[i] = rand();
+    g_planes[1].chars[i] = 0;
   }
 
   for (int i = 0; i < 16; ++i) {
@@ -421,12 +461,11 @@ void InitScanOut() {
 
   for (int i = 0; i < count_of(g_planes->names); ++i) {
     for (int j = 0; j < 2; ++j) {
-      Name name = {
-        .text.bg_color = rand(),
-        .text.fg_color = rand(),
-        .text.char_idx = i,
-      };
-      g_planes[j].names[i] = name;
+      Name name = {0};
+      g_planes[1].names[i] = name;
+
+      name.tile.tile_idx = rand();
+      g_planes[0].names[i] = name;
     }
   }
 
