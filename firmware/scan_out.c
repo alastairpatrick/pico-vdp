@@ -146,7 +146,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_
   }
 }
 
-static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_bits, bool sign_extend) {
+static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, int mask_msb, bool sign_extend) {
   interp_config cfg;
   
   cfg = interp_default_config();
@@ -155,7 +155,7 @@ static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_bits,
   
   cfg = interp_default_config();
   interp_config_set_cross_input(&cfg, true);
-  interp_config_set_mask(&cfg, 0, mask_bits - 1);
+  interp_config_set_mask(&cfg, mask_lsb, mask_msb);
   interp_config_set_signed(&cfg, sign_extend);
   interp_set_config(interp0, 1, &cfg);
   
@@ -168,10 +168,6 @@ static SCAN_OUT_INNER_SECTION Name GetName(const Plane* plane, int idx) {
 
 static SCAN_OUT_INNER_SECTION uint32_t GetTile(const Plane* plane, int idx) {
   return plane->tiles[idx & (count_of(plane->tiles) - 1)];
-}
-
-static SCAN_OUT_INNER_SECTION int GetChar(const Plane* plane, int idx) {
-  return plane->chars[idx & (count_of(plane->chars) - 1)];
 }
 
 static void SCAN_OUT_INNER_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
@@ -213,7 +209,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
 
   const Palette16* palette = g_plane_palettes[plane_idx];
   
-  ConfigureInterpolator(4, 4, false);
+  ConfigureInterpolator(4, 0, 3, false);
 
   for (int c = 0; c < 41; c += NUM_CORES) {
     Name name = GetName(plane, source_idx);
@@ -266,15 +262,14 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
     dest += plane_idx * TEXT_WIDTH;
   }
 
-  ConfigureInterpolator(1, 1, false);
-
   if (hires) {
+    ConfigureInterpolator(1, 0, 0, false);
+
     for (int c = 0; c < 41; c += NUM_CORES) {
       Name name = GetName(plane, source_idx);
       source_idx += NUM_CORES;
 
-      int char_idx = name.text.char_idx;
-      interp0->accum[0] = GetChar(plane, char_idx * CHAR_BYTES + pattern_y);
+      interp0->accum[0] = plane->chars[name.text.char_idx * CHAR_BYTES + pattern_y];
 
       uint8_t local_palette[] = {
         palette[name.text.bg_color],
@@ -289,12 +284,13 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
       dest += 32;
     }
   } else {
+    ConfigureInterpolator(1, 1, 1, false);
+
     for (int c = 0; c < 41; c += NUM_CORES) {
       Name name = GetName(plane, source_idx);
       source_idx += NUM_CORES;
 
-      int char_idx = name.text.char_idx;
-      interp0->accum[0] = GetChar(plane, char_idx * CHAR_BYTES + pattern_y);
+      interp0->accum[0] = plane->chars[name.text.char_idx * CHAR_BYTES + pattern_y] << 1;
 
       uint16_t local_palette[] = {
         palette[name.text.bg_color],
@@ -303,7 +299,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
 
       #pragma GCC unroll 8
       for (int i = 14; i >= 0; i -= 2) {
-        int color = local_palette[interp0->pop[1]];
+        int color = *(uint16_t*) (((uint8_t*) local_palette) + interp0->pop[1]);
         WriteDoublePixel(dest + i, color);
       }
 
@@ -323,7 +319,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
   const SpriteContext* ctx = cc;
   int y = ctx->y;
 
-  ConfigureInterpolator(4 * NUM_CORES, 4, false);
+  ConfigureInterpolator(4 * NUM_CORES, 0, 3, false);
 
   for (int priority = NUM_SPRITE_PRIORITIES - 1; priority > 0; --priority) {
     for (int j = 0; j < count_of(g_active_sprites); ++j) {

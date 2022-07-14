@@ -25,27 +25,24 @@ static int g_envelopes[16][128];
 
 static bool STRIPED_SECTION AdvanceTime(const AYState* state, int64_t* reset_time, int64_t period) {
   if (*reset_time + period <= state->time) {
-    *reset_time += period;
-    if (*reset_time + period <= state->time) {
-      *reset_time = state->time;
-    }
+    *reset_time = state->time;
     return true;
   }
   return false;
 }
 
 int STRIPED_SECTION GenerateAY(AYState* state, volatile TrackedSys80Reg* regs) {
-  // All periods are a multiple of 16 cycles so only need to recalculate every 16 cycles.
-  state->time += 16;
+  // Times and periods are in units of 16 AY cycles.
+  ++state->time;
 
   // Noise generator
-  int noise_period = ((regs[6].value & 0x1F) << 4);
+  int noise_period = (regs[6].value & 0x1F);
   if (AdvanceTime(state, &state->noise_reset_time, noise_period)) {
     state->noise_state = rosc_hw->randombit;
   }
 
   // Envelope generator
-  int env_period = ((regs[13].value << 8) + (regs[14].value << 16));
+  int env_period = ((regs[13].value << 4) + (regs[14].value << 12));
   if (AdvanceTime(state, &state->env_reset_time, env_period)) {
     if (++state->env_pos >= 128) {
       state->env_pos = 64;
@@ -70,7 +67,7 @@ int STRIPED_SECTION GenerateAY(AYState* state, volatile TrackedSys80Reg* regs) {
   for (int j = 0; j < count_of(state->tones); ++j) {
     // Tone generator
     AYTone* tone = &state->tones[j];
-    int period = ((regs[j*2].value << 4) + ((regs[j*2 + 1].value & 0x0F) << 12));
+    int period = (regs[j*2].value + ((regs[j*2 + 1].value & 0x0F) << 8));
     if (AdvanceTime(state, &tone->reset_time, period)) {
       tone->state = !tone->state;
     }
