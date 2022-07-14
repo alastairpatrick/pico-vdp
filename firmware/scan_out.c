@@ -39,10 +39,9 @@ typedef struct {
 typedef struct {
   union {
     struct {
-      uint8_t palette_idx : 3;
-      bool flip_x         : 1;
-      bool flip_y         : 1;
       uint16_t tile_idx   : 11;
+      uint8_t palette_idx : 2;
+      uint8_t flip_y      : 3;
     } tile;
 
     struct {
@@ -166,10 +165,6 @@ static SCAN_OUT_INNER_SECTION Name GetName(const Plane* plane, int idx) {
   return plane->names[idx & (count_of(plane->names) - 1)];
 }
 
-static SCAN_OUT_INNER_SECTION uint32_t GetTile(const Plane* plane, int idx) {
-  return plane->tiles[idx & (count_of(plane->tiles) - 1)];
-}
-
 static void SCAN_OUT_INNER_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
   // This is the proper way to do type punning but even with -O3 it still generates a call to memcpy()
   //memcpy(dest, &rgb, 2);
@@ -196,7 +191,7 @@ typedef struct {
   int y;
 } PlaneContext;
 
-static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num, int plane_idx) {
+static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num, bool transparent, int plane_idx) {
   const Plane* plane = &g_planes[plane_idx];
   const PlaneRegs* regs = &g_plane_regs[plane_idx];
   int y = ctx->y + regs->window_y;
@@ -215,27 +210,21 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
     Name name = GetName(plane, source_idx);
     source_idx += NUM_CORES;
 
-    int transparent = PreparePalette(palette[name.tile.palette_idx & (NUM_PALETTES-1)]);
+    int transparent_color = PreparePalette(palette[name.tile.palette_idx]);
 
-    int flipped_pattern_y = pattern_y;
-    //if (name.tile.flip_y) {
-    //  flipped_pattern_y = (TILE_SIZE-1) - flipped_pattern_y;
-    //}
+    interp0->accum[0] = plane->tiles[(name.tile.tile_idx * TILE_WORDS) + (pattern_y ^ name.tile.flip_y)];
 
-    int tile_idx = name.tile.tile_idx;
-    interp0->accum[0] = GetTile(plane, tile_idx * TILE_WORDS + flipped_pattern_y);
-
-    if (plane_idx) {
+    if (transparent) {
       #pragma GCC unroll 8
-      for (int i = 0; i < 16; i += 2) {
+      for (int i = 14; i >= 0; i -= 2) {
         int color = interp0->pop[1];
-        if (color != transparent) {
+        if (color != transparent_color) {
           WriteDoublePixel(dest + i, LookupPalette(color));
         }
       }
     } else {
       #pragma GCC unroll 8
-      for (int i = 0; i < 16; i += 2) {
+      for (int i = 14; i >= 0; i -= 2) {
         int color = interp0->pop[1];
         WriteDoublePixel(dest + i, LookupPalette(color));
       }
@@ -358,33 +347,6 @@ static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) 
   }
 }
 
-#pragma GCC pop_options
-
-static void STRIPED_SECTION ScanOutPlanes(const void* cc, int core_num) {
-  const PlaneContext* ctx = cc;
-  for (int i = 0; i < NUM_PLANES; ++i) {
-    const PlaneRegs* regs = &g_plane_regs[i];
-
-    switch (regs->plane_mode) {
-    case PLANE_MODE_TILE:
-      ScanOutTileMode(ctx, core_num, i);
-      break;
-    case PLANE_MODE_TEXT_40_30:
-      ScanOutTextMode(ctx, core_num, i, false, 8);
-      break;
-    case PLANE_MODE_TEXT_40_24:
-      ScanOutTextMode(ctx, core_num, i, false, 10);
-      break;
-    case PLANE_MODE_TEXT_80_30:
-      ScanOutTextMode(ctx, core_num, i, true, 8);
-      break;
-    case PLANE_MODE_TEXT_80_24:
-      ScanOutTextMode(ctx, core_num, i, true, 10);
-      break;
-    }
-  }
-}
-
 static void STRIPED_SECTION UpdateActiveSprites(int y) {
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
     ActiveSprite *active = &g_active_sprites[i];
@@ -400,6 +362,42 @@ static void STRIPED_SECTION DoublePalettes(Palette16 dest[], uint8_t source[][PA
     for (int j = 0; j < PALETTE_SIZE; ++j) {
       int rgb = source[i][j];
       dest[i][j] = (rgb << 8) | rgb;
+    }
+  }
+}
+
+#pragma GCC pop_options
+
+static void STRIPED_SECTION ScanOutPlanes(const void* cc, int core_num) {
+  const PlaneContext* ctx = cc;
+  bool transparent = false;
+  for (int i = 0; i < NUM_PLANES; ++i) {
+    // Don't scan out plane 0 if it is occluded by plane 1. This means we don't have to deal with the slowest
+    // case of two 40 column text planes plus sprite layer.
+    if (i == 0 && (g_plane_regs[1].plane_mode == PLANE_MODE_TEXT_40_30 || g_plane_regs[1].plane_mode == PLANE_MODE_TEXT_40_24))
+      continue;
+
+    const PlaneRegs* regs = &g_plane_regs[i];
+
+    switch (regs->plane_mode) {
+    case PLANE_MODE_TILE:
+      ScanOutTileMode(ctx, core_num, i, transparent);
+      transparent = true;
+      break;
+    case PLANE_MODE_TEXT_40_30:
+      ScanOutTextMode(ctx, core_num, i, false, 8);
+      transparent = true;
+      break;
+    case PLANE_MODE_TEXT_40_24:
+      ScanOutTextMode(ctx, core_num, i, false, 10);
+      transparent = true;
+      break;
+    case PLANE_MODE_TEXT_80_30:
+      ScanOutTextMode(ctx, core_num, i, true, 8);
+      break;
+    case PLANE_MODE_TEXT_80_24:
+      ScanOutTextMode(ctx, core_num, i, true, 10);
+      break;
     }
   }
 }
