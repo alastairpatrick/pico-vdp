@@ -33,10 +33,10 @@ typedef struct {
 
                                           // Not overclocked                                                Overclocked
 const VideoTiming g_timing640_480 = {
-  OVERCLOCK_SELECT(1512, 1008) * MHZ,
-  OVERCLOCK_SELECT(6, 5),
-  OVERCLOCK_SELECT(2, 1),                 // 1512MHZ / 6 / 2 = 126MHz                                       1008MHZ / 5 / 1 = 201.6MHz
-  OVERCLOCK_SELECT(640, 1024),            // 126MHZ / (640/256) = 50.4MHZ                                   201.6MHz / (1024/256) = 50.4MHZ
+  OVERCLOCK_SELECT(1512, 1512) * MHZ,
+  OVERCLOCK_SELECT(6, 6),
+  OVERCLOCK_SELECT(2, 1),                 // 1512MHZ / 6 / 2 = 126MHz                                       1512MHZ / 6 / 1 = 252MHz
+  OVERCLOCK_SELECT(640, 1280),            // 126MHZ / (640/256) = 50.4MHZ                                   252MHz / (1280/256) = 50.4MHZ
                                           // 50.4MHZ / 2 cycles/pixel = 25.2MHZ =~ 25.175MHz +- 0.5%
   { 640, 16, 96, 48 },
   { 480, 10, 2, 33 },
