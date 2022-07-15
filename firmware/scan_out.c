@@ -28,7 +28,8 @@
 #define TEXT_WIDTH 8
 #define CHAR_BYTES 16
 
-#define NUM_ACTIVE_SPRITES 8
+#define SPRITE_WIDTH 16
+#define NUM_ACTIVE_SPRITES 16
 #define NUM_SPRITE_PRIORITIES 4
 
 typedef struct {
@@ -73,22 +74,32 @@ typedef struct {
 
 typedef struct {
   int16_t x: 10;
-  int16_t y: 9;
+  bool flip_x: 1;
+  int16_t y: 10;
+  bool flip_y: 1;
+  uint8_t z: 2;
 
-  uint8_t height;  // height + 1
-
-  uint8_t width: 1;   // 0->16 or 1->32
-  uint8_t priority: 2;
+  uint16_t image_addr: 10;
+  uint8_t height: 2;  // 8 << height
   bool transparent: 1;
   uint8_t palette_idx: 3;
-
-  uint16_t image_addr: 14;
 } Sprite;
 
-static_assert(sizeof(Sprite) == 8);
+static_assert(sizeof(Sprite) == 6);
 
 typedef struct {
-  Sprite sprite;
+  int16_t x;
+  int16_t y;
+
+  uint8_t z;
+  uint8_t palette_idx;
+
+  uint16_t image_addr;
+
+  uint8_t height;
+  bool flip_x: 1;
+  bool flip_y: 1;
+  bool transparent: 1;
 } ActiveSprite;
 
 static ActiveSprite g_active_sprites[NUM_ACTIVE_SPRITES];
@@ -137,49 +148,47 @@ void STRIPED_SECTION WriteVideoMemByte(int device, int address, int data) {
 }
 
 #pragma GCC push_options
-#pragma GCC optimize("O3")
 
-static void SCAN_OUT_INNER_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
+// -fno-strict-aliasing because the usual memcpy() approach to type punning does not work; the
+// compiler generates a call to memcpy() rather than inlining even when just copying a single uint16_t.
+#pragma GCC optimize("O3,no-strict-aliasing")
+
+static int STRIPED_SECTION CalcSpriteHeight(int h) {
+  return 8 << h;
+}
+
+static void STRIPED_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
   for (int x = 0; x < width; ++x) {
     *dest++ = rgb;
   }
 }
 
-static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, int mask_msb, bool sign_extend) {
-  interp_config cfg;
-  
-  cfg = interp_default_config();
-  interp_config_set_shift(&cfg, shift_bits);
-  interp_set_config(interp0, 0, &cfg);
-  
-  cfg = interp_default_config();
-  interp_config_set_cross_input(&cfg, true);
-  interp_config_set_mask(&cfg, mask_lsb, mask_msb);
-  interp_config_set_signed(&cfg, sign_extend);
-  interp_set_config(interp0, 1, &cfg);
+static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, int mask_msb) {
+  interp0->ctrl[0] = shift_bits << SIO_INTERP0_CTRL_LANE0_SHIFT_LSB |
+    (31 << SIO_INTERP0_CTRL_LANE0_MASK_MSB_LSB);
+
+  interp0->ctrl[1] = SIO_INTERP0_CTRL_LANE0_CROSS_INPUT_BITS |
+    (mask_lsb << SIO_INTERP0_CTRL_LANE0_MASK_LSB_LSB) |
+    (mask_msb << SIO_INTERP0_CTRL_LANE0_MASK_MSB_LSB);
   
   interp0->base[1] = 0;
 }
 
-static SCAN_OUT_INNER_SECTION Name GetName(const Plane* plane, int idx) {
+static STRIPED_SECTION Name GetName(const Plane* plane, int idx) {
   return plane->names[idx & (count_of(plane->names) - 1)];
 }
 
-static void SCAN_OUT_INNER_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
-  // This is the proper way to do type punning but even with -O3 it still generates a call to memcpy()
-  //memcpy(dest, &rgb, 2);
-
-  // Incorrect type punning.
+static void STRIPED_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
   *(uint16_t*) dest = rgb;
 }
 
-static int SCAN_OUT_INNER_SECTION PreparePalette(const uint16_t* palette) {
+static int STRIPED_SECTION PreparePalette(const uint16_t* palette) {
   int half_palette = ((int) palette) >> 1;
   interp0->base[1] = half_palette;
   return half_palette;
 }
 
-static int SCAN_OUT_INNER_SECTION LookupPalette(int color) {
+static int STRIPED_SECTION LookupPalette(int color) {
   int rgb;
   asm ("LDRH %0, [%1, %1]" : "=l" (rgb) : "l" (color));
   return rgb;
@@ -191,7 +200,7 @@ typedef struct {
   int y;
 } PlaneContext;
 
-static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num, bool transparent, int plane_idx) {
+static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num, bool transparent, int plane_idx) {
   const Plane* plane = &g_planes[plane_idx];
   const PlaneRegs* regs = &g_plane_regs[plane_idx];
   int y = ctx->y + regs->window_y;
@@ -204,7 +213,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
 
   const Palette16* palette = g_plane_palettes[plane_idx];
   
-  ConfigureInterpolator(4, 0, 3, false);
+  ConfigureInterpolator(4, 0, 3);
 
   for (int c = 0; c < 41; c += NUM_CORES) {
     Name name = GetName(plane, source_idx);
@@ -233,7 +242,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTileMode(const PlaneContext* ctx, int 
   }
 }
 
-static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int plane_idx, bool hires, int text_height) {
+static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int plane_idx, bool hires, int text_height) {
   const Plane* plane = &g_planes[plane_idx];
   const PlaneRegs* regs = &g_plane_regs[plane_idx];
 
@@ -252,7 +261,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
   }
 
   if (hires) {
-    ConfigureInterpolator(1, 0, 0, false);
+    ConfigureInterpolator(1, 0, 0);
 
     for (int c = 0; c < 41; c += NUM_CORES) {
       Name name = GetName(plane, source_idx);
@@ -273,7 +282,7 @@ static void SCAN_OUT_INNER_SECTION ScanOutTextMode(const PlaneContext* ctx, int 
       dest += 32;
     }
   } else {
-    ConfigureInterpolator(1, 1, 1, false);
+    ConfigureInterpolator(1, 1, 1);
 
     for (int c = 0; c < 41; c += NUM_CORES) {
       Name name = GetName(plane, source_idx);
@@ -304,42 +313,58 @@ typedef struct {
   int y;
 } SpriteContext;
 
-static void SCAN_OUT_INNER_SECTION ScanOutSprites(const void* cc, int core_num) {
+static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
   const SpriteContext* ctx = cc;
   int y = ctx->y;
 
-  ConfigureInterpolator(4 * NUM_CORES, 0, 3, false);
+  ConfigureInterpolator(4 * NUM_CORES, 0, 3);
 
-  for (int priority = NUM_SPRITE_PRIORITIES - 1; priority > 0; --priority) {
+  for (int z = NUM_SPRITE_PRIORITIES - 1; z >= 0; --z) {
     for (int j = 0; j < count_of(g_active_sprites); ++j) {
       const ActiveSprite* active = &g_active_sprites[j];
-      if (active->sprite.priority != priority)
+      if (active->z != z)
         continue;
-      if (active->sprite.y > y)
-        continue;
-      if (active->sprite.x <= -32 || active->sprite.x >= 320)
+      if (active->y > y)
         continue;
 
-      int width = active->sprite.width ? 4 : 2;
-      const uint32_t* src = g_sprite_layer.images + active->sprite.image_addr + width * (y - active->sprite.y);
-      width *= 8; // 16 or 32
+      const uint32_t* src = g_sprite_layer.images + 16 * active->image_addr;
+      if (active->flip_y) {
+        src += (SPRITE_WIDTH/8) * (active->height - 1 - y - active->y);
+      } else {
+        src += (SPRITE_WIDTH/8) * (y - active->y);
+      }
 
-      int transparent = PreparePalette(g_sprite_palettes[active->sprite.palette_idx]);
-      if (!active->sprite.transparent) {
+      int transparent = PreparePalette(g_sprite_palettes[active->palette_idx]);
+      if (!active->transparent) {
         transparent = -1;
       }
 
-      uint16_t* dest = ((uint16_t*) ctx->dest) + active->sprite.x;
+      uint16_t* dest = ((uint16_t*) ctx->dest) + active->x;
 
-      int x = (active->sprite.x & (NUM_CORES-1)) ^ core_num;
-      for (; x < width; x += 8) {
-        interp0->accum[0] = (*src++) >> (core_num * 4);
+      if (active->flip_x) {
+        int x = (SPRITE_WIDTH - 2) + ((active->x & (NUM_CORES-1)) ^ core_num);
+        for (; x >= 0; x -= 8) {
+          interp0->accum[0] = (*src++) >> (core_num * 4);
 
-        #pragma GCC unroll 4
-        for (int i = 6; i >= 0; i -= 2) {
-          int color = interp0->pop[1];
-          if (color != transparent) {
-            dest[x + i] = LookupPalette(color);
+          #pragma GCC unroll 4
+          for (int i = 6; i >= 0; i -= 2) {
+            int color = interp0->pop[1];
+            if (color != transparent) {
+              dest[x + i] = LookupPalette(color);
+            }
+          }
+        }
+      } else {
+        int x = (active->x & (NUM_CORES-1)) ^ core_num;
+        for (; x < SPRITE_WIDTH; x += 8) {
+          interp0->accum[0] = (*src++) >> (core_num * 4);
+
+          #pragma GCC unroll 4
+          for (int i = 0; i < 8; i += 2) {
+            int color = interp0->pop[1];
+            if (color != transparent) {
+              dest[x + i] = LookupPalette(color);
+            }
           }
         }
       }
@@ -351,8 +376,27 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
     ActiveSprite *active = &g_active_sprites[i];
 
-    if (y > active->sprite.y + active->sprite.height) {
-      active->sprite = g_sprite_layer.sprites[g_pending_sprite_idx++];
+    if (y >= active->y + active->height) {
+      if (g_pending_sprite_idx < count_of(g_sprite_layer.sprites)) {
+        const Sprite* sprite = &g_sprite_layer.sprites[g_pending_sprite_idx++];
+        active->x = sprite->x;
+        active->y = sprite->y;
+        active->z = sprite->z;
+        active->height = CalcSpriteHeight(sprite->height);
+        active->image_addr = sprite->image_addr;
+        active->palette_idx = sprite->palette_idx;
+        active->flip_x = sprite->flip_x;
+        active->flip_y = sprite->flip_y;
+        active->transparent = sprite->transparent;
+
+        if (active->x <= -SPRITE_WIDTH || active->x >= 320) {
+          active->z = 0xFF;
+        }
+      } else {
+        active->y = 240;
+        active->height = 0;
+        active->z = 0xFF;
+      }
     }
   }
 }
@@ -413,8 +457,9 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
 
   g_pending_sprite_idx = 0;
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
-    g_active_sprites[i].sprite.y = -1;
-    g_active_sprites[i].sprite.height = 0;
+    g_active_sprites[i].y = 0;
+    g_active_sprites[i].height = 0;
+    g_active_sprites[i].z = 0xFF;
   }
 }
 
@@ -441,6 +486,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {
+  g_sys80_regs.current_y = 0xFF;
 }
 
 void InitScanOut() {
@@ -469,21 +515,20 @@ void InitScanOut() {
   memset(g_sprite_layer.bytes, 0x11, sizeof(g_sprite_layer.bytes));
 
   int i = 0;
-  for (int y = 0; y < 8; ++y) {
-    for (int x = 0; x < 8; ++x) {
+  for (int y = 0; y < 16; ++y) {
+    for (int x = 0; x < 16; ++x) {
       Sprite* sprite = &g_sprite_layer.sprites[i];
-      sprite->height = 31;
-      sprite->priority = 1;
-      sprite->width = 1;
-      sprite->x = x * 35;
-      sprite->y = y * 35 + x;
+      sprite->height = 1;
+      sprite->z = 1;
+      sprite->x = x * 20 + y * 2 - 20;
+      sprite->y = y * 26 + x - 20;
       ++i;
     }
   }
 
   for (; i < count_of(g_sprite_layer.sprites); ++i) {
     Sprite* sprite = &g_sprite_layer.sprites[i];
-    sprite->y = -1;
-    sprite->height = 1;
+    sprite->y = -8;
+    sprite->height = 0;
   }
 }
