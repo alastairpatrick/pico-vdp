@@ -299,7 +299,7 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
       uint16_t* dest = ((uint16_t*) ctx->dest) + active->x;
 
       if (flip & 1) {
-        int x = (SPRITE_WIDTH - 2) + ((active->x & (NUM_CORES-1)) ^ core_num);
+        int x = (SPRITE_WIDTH - 8) + ((active->x & (NUM_CORES-1)) ^ core_num);
         for (; x >= 0; x -= 8) {
           interp0->accum[0] = (*src++) >> (core_num * 4);
 
@@ -478,6 +478,7 @@ void InitScanOut() {
       sprite->z = 1;
       sprite->x = x * 20 + y * 2 - 20;
       sprite->y = y * 26 + x - 20;
+      sprite->flip = 0b11;
       ++i;
     }
   }
