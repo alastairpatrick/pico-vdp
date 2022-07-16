@@ -21,6 +21,10 @@
 
 #define AWFUL_MAGENTA 0xC7
 
+#define LORES_DISPLAY_WIDTH 320
+#define HIRES_DISPLAY_WIDTH (LORES_DISPLAY_WIDTH / 2)
+#define DISPLAY_HEIGHT 240
+
 #define PLANE_WIDTH 64
 #define PLANE_HEIGHT 64
 #define NUM_PALETTES 8
@@ -38,7 +42,6 @@
 #define NUM_SPRITE_PRIORITIES 4
 
 typedef struct {
-  PlaneMode plane_mode :8;                        // 1 bytes
   uint8_t window_x, window_y;                     // 2 bytes
 } PlaneRegs;
 
@@ -155,9 +158,23 @@ static int STRIPED_SECTION CalcSpriteHeight(int h) {
   return 8 << h;
 }
 
-static void STRIPED_SECTION ScanOutSolid(uint8_t* dest, int width, uint8_t rgb) {
-  for (int x = 0; x < width; ++x) {
-    *dest++ = rgb;
+typedef struct {
+  ParallelContext parallel;
+  uint8_t* dest;
+  uint8_t rgb;
+} ClearContext;
+
+static void STRIPED_SECTION ScanOutClear(const void* cc, int core_num) {
+  const ClearContext* ctx = cc;
+
+  uint32_t rgb = ctx->rgb;
+  rgb = rgb | (rgb << 8);
+  rgb = rgb | (rgb << 16);
+
+  uint8_t* dest = ctx->dest;
+
+  for (int x = core_num * 4; x < HIRES_DISPLAY_WIDTH; x += 4 * NUM_CORES) {
+    *((uint32_t*) (dest + x)) = rgb; 
   }
 }
 
@@ -195,11 +212,14 @@ static int STRIPED_SECTION LookupPalette(int color) {
 
 typedef struct {
   ParallelContext parallel;
+  int plane_idx;
+  int video_flags;
   uint8_t* dest;
   int y;
 } PlaneContext;
 
-static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num, bool transparent, int plane_idx) {
+static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num) {
+  int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
   const PlaneRegs* regs = &g_plane_regs[plane_idx];
   int y = ctx->y + regs->window_y;
@@ -221,7 +241,7 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   
   ConfigureInterpolator(4, 0, 3);
 
-  if (transparent) {
+  if (plane_idx == 1) {
     #define TRANSPARENT 1
     #include "scan_tile_templ.h"
     #undef TRANSPARENT
@@ -233,7 +253,8 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
 }
 
 
-static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int plane_idx, bool hires, int text_height) {
+static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, bool hires, int text_height) {
+  int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
   const PlaneRegs* regs = &g_plane_regs[plane_idx];
 
@@ -345,11 +366,11 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
         active->flip = sprite->flip;
         active->transparent = sprite->transparent;
 
-        if (active->x <= -SPRITE_WIDTH || active->x >= 320) {
+        if (active->x <= -SPRITE_WIDTH || active->x >= LORES_DISPLAY_WIDTH) {
           active->z = 0xFF;
         }
       } else {
-        active->y = 240;
+        active->y = DISPLAY_HEIGHT;
         active->height = 0;
         active->z = 0xFF;
       }
@@ -368,37 +389,23 @@ static void STRIPED_SECTION DoublePalettes(Palette16 dest[], uint8_t source[][PA
 
 #pragma GCC pop_options
 
-static void STRIPED_SECTION ScanOutPlanes(const void* cc, int core_num) {
+static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
   const PlaneContext* ctx = cc;
-  bool transparent = false;
-  for (int i = 0; i < NUM_PLANES; ++i) {
-    // Don't scan out plane 0 if it is occluded by plane 1. This means we don't have to deal with the slowest
-    // case of two 40 column text planes plus sprite layer.
-    if (i == 0 && (g_plane_regs[1].plane_mode == PLANE_MODE_TEXT_40_30 || g_plane_regs[1].plane_mode == PLANE_MODE_TEXT_40_24))
-      continue;
+  int plane_idx = ctx->plane_idx;
+  int video_flags = ctx->video_flags;
 
-    const PlaneRegs* regs = &g_plane_regs[i];
+  if (video_flags & VIDEO_FLAG_TEXT_EN) {
+    int text_height = video_flags & VIDEO_FLAG_TEXT_ROWS ? 10 : 8;
 
-    switch (regs->plane_mode) {
-    case PLANE_MODE_TILE:
-      ScanOutTileMode(ctx, core_num, i, transparent);
-      transparent = true;
-      break;
-    case PLANE_MODE_TEXT_40_30:
-      ScanOutTextMode(ctx, core_num, i, false, 8);
-      transparent = true;
-      break;
-    case PLANE_MODE_TEXT_40_24:
-      ScanOutTextMode(ctx, core_num, i, false, 10);
-      transparent = true;
-      break;
-    case PLANE_MODE_TEXT_80_30:
-      ScanOutTextMode(ctx, core_num, i, true, 8);
-      break;
-    case PLANE_MODE_TEXT_80_24:
-      ScanOutTextMode(ctx, core_num, i, true, 10);
-      break;
+    if (video_flags & VIDEO_FLAG_HIRES_EN) {
+      ScanOutTextMode(ctx, core_num, true, text_height);
+    } else if (plane_idx == 0) {
+      ScanOutTextMode(ctx, core_num, false, text_height);
+    } else {
+      ScanOutTileMode(ctx, core_num);
     }
+  } else {
+    ScanOutTileMode(ctx, core_num);
   }
 }
 
@@ -419,26 +426,63 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   }
 }
 
-void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
-  g_sys80_regs.current_y = y;
-
-  PlaneContext plane_ctx = {
-    .parallel.entry = ScanOutPlanes,
+void STRIPED_SECTION ScanOutPlaneParallel(uint8_t* dest, int y, int plane_idx, int video_flags) {
+  PlaneContext ctx = {
+    .parallel.entry = ScanOutPlane,
+    .plane_idx = plane_idx,
+    .video_flags = video_flags,
     .dest = dest,
     .y = y,
   };
 
-  Parallel(&plane_ctx);
+  Parallel(&ctx);
+}
 
-  UpdateActiveSprites(y);
-
-  SpriteContext sprite_ctx = {
+void STRIPED_SECTION ScanOutSpritesParallel(uint8_t* dest, int y) {
+  SpriteContext ctx = {
     .parallel.entry = ScanOutSprites,
     .dest = dest,
     .y = y,
   };
 
-  Parallel(&sprite_ctx);
+  Parallel(&ctx);
+}
+
+void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
+  g_sys80_regs.current_y = y;
+
+  UpdateActiveSprites(y);
+
+  int video_flags = g_sys80_regs.video_flags;
+
+  // If either plane is disabled, initialize to solid black.
+  if ((video_flags & (VIDEO_FLAG_PLANE_0_EN | VIDEO_FLAG_PLANE_1_EN)) != (VIDEO_FLAG_PLANE_0_EN | VIDEO_FLAG_PLANE_1_EN)) {
+    ClearContext clear_ctx = {
+      .parallel.entry = ScanOutClear,
+      .dest = dest,
+      .rgb = 0,
+    };
+
+    Parallel(&clear_ctx);
+  }
+
+  if (video_flags & VIDEO_FLAG_PLANE_0_EN) {
+    ScanOutPlaneParallel(dest, y, 0, video_flags);
+  }
+
+  bool sprite_en = video_flags & VIDEO_FLAG_SPRITE_EN;
+  bool sprite_pri = video_flags & VIDEO_FLAG_SPRITE_PRI;
+  if (sprite_en && !sprite_pri) {
+    ScanOutSpritesParallel(dest, y);
+  }
+
+  if (video_flags & VIDEO_FLAG_PLANE_1_EN) {
+    ScanOutPlaneParallel(dest, y, 1, video_flags);
+  }
+
+  if (sprite_en && sprite_pri) {
+    ScanOutSpritesParallel(dest, y);
+  }
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {
@@ -446,6 +490,8 @@ void STRIPED_SECTION ScanOutEndDisplay() {
 }
 
 void InitScanOut() {
+  g_sys80_regs.video_flags = VIDEO_FLAG_PLANE_0_EN | VIDEO_FLAG_PLANE_1_EN | VIDEO_FLAG_SPRITE_EN | VIDEO_FLAG_SPRITE_PRI;
+
   for (int i = 0; i < count_of(g_planes->chars); ++i) {
     g_planes[0].chars[i] = rand();
     g_planes[1].chars[i] = 0;
@@ -464,9 +510,6 @@ void InitScanOut() {
       g_planes[0].names[i] = name;
     }
   }
-
-  g_planes[0].regs.plane_mode = PLANE_MODE_TILE;
-  g_planes[1].regs.plane_mode = PLANE_MODE_TILE;
 
   memset(g_sprite_layer.bytes, 0x11, sizeof(g_sprite_layer.bytes));
 

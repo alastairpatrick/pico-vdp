@@ -23,7 +23,18 @@ typedef struct {
   uint16_t device;
   uint32_t address;
   uint16_t data;
+  uint16_t pad[3];
 } MemAccessSys80Regs;
+
+enum {
+  VIDEO_FLAG_PLANE_0_EN   = 0x01,
+  VIDEO_FLAG_PLANE_1_EN   = 0x02,
+  VIDEO_FLAG_TEXT_EN      = 0x04,
+  VIDEO_FLAG_HIRES_EN     = 0x08,
+  VIDEO_FLAG_TEXT_ROWS    = 0x10,
+  VIDEO_FLAG_SPRITE_EN    = 0x40,
+  VIDEO_FLAG_SPRITE_PRI   = 0x80,
+};
 
 typedef struct {
   // Read-write registers
@@ -32,8 +43,10 @@ typedef struct {
       // Audio / PIO range $0x, $1x
       TrackedSys80Reg ay[2][16];
 
-      // Video generator range $2x, $3x
-      MemAccessSys80Regs mem_access;
+      // Video generator range $2x
+      MemAccessSys80Regs mem_access;  // $20
+      uint16_t video_flags;           // $28
+
     };
     uint16_t rw_bytes[128];
   };

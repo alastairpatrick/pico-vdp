@@ -1,7 +1,8 @@
 .MODULE PVDP
 
 ; Configuration
-_DISPLAY_MODE           .EQU    3
+_WIDTH                  .EQU    40
+_HEIGHT                 .EQU    24
 TERMENABLE      	.SET	TRUE
 _KEY_BUF_SIZE           .EQU    16
 _ENABLE_FIFO            .EQU    1
@@ -12,8 +13,7 @@ _CURSOR_BLINK_PERIOD    .EQU    8
 _ADDR_FONT              .EQU    $2100
 _ADDR_PALETTE           .EQU    $2080
 _ADDR_REGS              .EQU    $2000
-_ADDR_DISPLAY_MODE      .EQU    _ADDR_REGS + $00
-_ADDR_WINDOW_Y          .EQU    _ADDR_REGS + $02
+_ADDR_WINDOW_Y          .EQU    _ADDR_REGS + $01
 _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
 _PORT_OP                .EQU    $B2
@@ -30,26 +30,7 @@ _REG_DEVICE             .EQU    $21
 _REG_KEY_ROWS           .EQU    $80
 _REG_LEDS               .EQU    $08
 _REG_OPERATION          .EQU    $20
-
-#IF _DISPLAY_MODE == 1
-_WIDTH                  .EQU    40
-_HEIGHT                 .EQU    24
-#ENDIF
-
-#IF _DISPLAY_MODE == 2
-_WIDTH                  .EQU    40
-_HEIGHT                 .EQU    30
-#ENDIF
-
-#IF _DISPLAY_MODE == 3
-_WIDTH                  .EQU    80
-_HEIGHT                 .EQU    24
-#ENDIF
-
-#IF _DISPLAY_MODE == 4
-_WIDTH                  .EQU    80
-_HEIGHT                 .EQU    30
-#ENDIF
+_REG_VIDEO_FLAGS        .EQU    $28
 
 #IF _WIDTH == 40
 _NUM_DEVICES            .EQU    1
@@ -146,6 +127,22 @@ PVDP_RESET:
         PUSH    DE
         PUSH    HL
 
+        ; Set video flags
+        LD      C, _REG_VIDEO_FLAGS
+#IF (_WIDTH == 40) & (_HEIGHT == 24)
+        LD      D, $15
+#ENDIF
+#IF (_WIDTH == 40) & (_HEIGHT == 30)
+        LD      D, $05
+#ENDIF
+#IF (_WIDTH == 80) & (_HEIGHT == 24)
+        LD      D, $1F
+#ENDIF
+#IF (_WIDTH == 80) & (_HEIGHT == 30)
+        LD      D, $0F
+#ENDIF
+        CALL _SET_REG_D
+
         CALL    LPVDP_INIT
 
         LD      E, _NUM_DEVICES-1
@@ -198,12 +195,6 @@ _RESET_DEVICE:
         CALL    LPVDP_ADDRESS
 
         CALL    _OUTPUT_FONT
-
-        ; Set display mode.
-        LD      DE, _ADDR_DISPLAY_MODE
-        CALL    LPVDP_ADDRESS
-        LD      A, _DISPLAY_MODE
-        CALL    LPVDP_WRITE
 
         POP     HL
         POP     DE
