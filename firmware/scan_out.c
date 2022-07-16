@@ -78,9 +78,6 @@ typedef struct {
 } Plane;
 
 typedef struct {
-} SpriteRegs;
-
-typedef struct {
   int16_t x: 10;
   
   int16_t y: 10;
@@ -115,8 +112,6 @@ static int g_pending_sprite_idx;
 typedef struct {
   union {
     struct {
-      SpriteRegs regs;                                // 128 bytes
-      uint8_t pad[128 - sizeof(SpriteRegs)];
       uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
       Sprite sprites[256];
     };
