@@ -1,3 +1,8 @@
+// -fno-strict-aliasing because the usual memcpy() approach to type punning does not work; the
+// compiler generates a call to memcpy() rather than inlining even when just copying a single uint16_t.
+#pragma GCC push_options
+#pragma GCC optimize("O3,no-strict-aliasing")
+
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -146,12 +151,6 @@ void STRIPED_SECTION WriteVideoMemByte(int device, int address, int data) {
     g_planes[device].bytes[address & 0xFFFF] = data;
   }
 }
-
-#pragma GCC push_options
-
-// -fno-strict-aliasing because the usual memcpy() approach to type punning does not work; the
-// compiler generates a call to memcpy() rather than inlining even when just copying a single uint16_t.
-#pragma GCC optimize("O3,no-strict-aliasing")
 
 static int STRIPED_SECTION CalcSpriteHeight(int h) {
   return 8 << h;
