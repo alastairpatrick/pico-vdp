@@ -46,8 +46,8 @@ typedef struct {
   union {
     struct {
       uint16_t tile_idx   : 11;
-      uint8_t palette_idx : 2;
-      uint8_t flip_y      : 3;
+      uint8_t palette_idx : 3;
+      uint8_t flip        : 2;
     } tile;
 
     struct {
@@ -79,10 +79,10 @@ typedef struct {
 
 typedef struct {
   int16_t x: 10;
-  bool flip_x: 1;
+  
   int16_t y: 10;
-  bool flip_y: 1;
   uint8_t z: 2;
+  uint8_t flip: 2;
 
   uint16_t image_addr: 10;
   uint8_t height: 2;  // 8 << height
@@ -102,8 +102,7 @@ typedef struct {
   uint16_t image_addr;
 
   uint8_t height;
-  bool flip_x: 1;
-  bool flip_y: 1;
+  int flip: 2;
   bool transparent: 1;
 } ActiveSprite;
 
@@ -193,6 +192,7 @@ static int STRIPED_SECTION LookupPalette(int color) {
   return rgb;
 }
 
+
 typedef struct {
   ParallelContext parallel;
   uint8_t* dest;
@@ -203,8 +203,15 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   const Plane* plane = &g_planes[plane_idx];
   const PlaneRegs* regs = &g_plane_regs[plane_idx];
   int y = ctx->y + regs->window_y;
+
   int pattern_y = y & (TILE_SIZE-1);
-  
+  const uint32_t* base_tiles[4] = {  // indexed by name.tile.flip_y
+    plane->tiles + pattern_y,
+    plane->tiles + pattern_y,
+    plane->tiles + 7 - pattern_y,
+    plane->tiles + 7 - pattern_y,
+  };
+
   int source_idx = (y * TILE_SIZE) * PLANE_WIDTH + (regs->window_x * TILE_SIZE) + core_num;
 
   static_assert(TILE_SIZE * 2 == 16);
@@ -214,32 +221,17 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   
   ConfigureInterpolator(4, 0, 3);
 
-  for (int c = 0; c < 41; c += NUM_CORES) {
-    Name name = GetName(plane, source_idx);
-    source_idx += NUM_CORES;
-
-    int transparent_color = PreparePalette(palette[name.tile.palette_idx]);
-
-    interp0->accum[0] = plane->tiles[(name.tile.tile_idx * TILE_WORDS) + (pattern_y ^ name.tile.flip_y)];
-
-    if (transparent) {
-      #pragma GCC unroll 8
-      for (int i = 14; i >= 0; i -= 2) {
-        int color = interp0->pop[1];
-        if (color != transparent_color) {
-          WriteDoublePixel(dest + i, LookupPalette(color));
-        }
-      }
-    } else {
-      #pragma GCC unroll 8
-      for (int i = 14; i >= 0; i -= 2) {
-        int color = interp0->pop[1];
-        WriteDoublePixel(dest + i, LookupPalette(color));
-      }
-    }
-    dest += 32;
+  if (transparent) {
+    #define TRANSPARENT 1
+    #include "scan_tile_templ.h"
+    #undef TRANSPARENT
+  } else {
+    #define TRANSPARENT 0
+    #include "scan_tile_templ.h"
+    #undef TRANSPARENT
   }
 }
+
 
 static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, int plane_idx, bool hires, int text_height) {
   const Plane* plane = &g_planes[plane_idx];
@@ -260,48 +252,13 @@ static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_nu
   }
 
   if (hires) {
-    ConfigureInterpolator(1, 0, 0);
-
-    for (int c = 0; c < 41; c += NUM_CORES) {
-      Name name = GetName(plane, source_idx);
-      source_idx += NUM_CORES;
-
-      interp0->accum[0] = plane->chars[name.text.char_idx * CHAR_BYTES + pattern_y];
-
-      uint8_t local_palette[] = {
-        palette[name.text.bg_color],
-        palette[name.text.fg_color],
-      };
-
-      #pragma GCC unroll 8
-      for (int i = 7; i >= 0; --i) {
-        dest[i] = local_palette[interp0->pop[1]];
-      }
-
-      dest += 32;
-    }
+    #define HIRES 1
+    #include "scan_text_templ.h"
+    #undef HIRES
   } else {
-    ConfigureInterpolator(1, 1, 1);
-
-    for (int c = 0; c < 41; c += NUM_CORES) {
-      Name name = GetName(plane, source_idx);
-      source_idx += NUM_CORES;
-
-      interp0->accum[0] = plane->chars[name.text.char_idx * CHAR_BYTES + pattern_y] << 1;
-
-      uint16_t local_palette[] = {
-        palette[name.text.bg_color],
-        palette[name.text.fg_color],
-      };
-
-      #pragma GCC unroll 8
-      for (int i = 14; i >= 0; i -= 2) {
-        int color = *(uint16_t*) (((uint8_t*) local_palette) + interp0->pop[1]);
-        WriteDoublePixel(dest + i, color);
-      }
-
-      dest += 32;
-    }
+    #define HIRES 0
+    #include "scan_text_templ.h"
+    #undef HIRES  
   }
 }
 
@@ -326,8 +283,9 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
       if (active->y > y)
         continue;
 
+      int flip = active->flip;
       const uint32_t* src = g_sprite_layer.images + 16 * active->image_addr;
-      if (active->flip_y) {
+      if (flip & 2) {
         src += (SPRITE_WIDTH/8) * (active->height - 1 - y - active->y);
       } else {
         src += (SPRITE_WIDTH/8) * (y - active->y);
@@ -340,7 +298,7 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
 
       uint16_t* dest = ((uint16_t*) ctx->dest) + active->x;
 
-      if (active->flip_x) {
+      if (flip & 1) {
         int x = (SPRITE_WIDTH - 2) + ((active->x & (NUM_CORES-1)) ^ core_num);
         for (; x >= 0; x -= 8) {
           interp0->accum[0] = (*src++) >> (core_num * 4);
@@ -384,8 +342,7 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
         active->height = CalcSpriteHeight(sprite->height);
         active->image_addr = sprite->image_addr;
         active->palette_idx = sprite->palette_idx;
-        active->flip_x = sprite->flip_x;
-        active->flip_y = sprite->flip_y;
+        active->flip = sprite->flip;
         active->transparent = sprite->transparent;
 
         if (active->x <= -SPRITE_WIDTH || active->x >= 320) {
