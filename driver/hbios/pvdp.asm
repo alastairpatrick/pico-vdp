@@ -28,6 +28,7 @@ _REG_DEVICE             .EQU    $29
 _REG_KEY_ROWS           .EQU    $80
 _REG_LEDS               .EQU    $08
 _REG_OPERATION          .EQU    $28
+_REG_SCAN_LINE          .EQU    $A0
 _REG_VIDEO_FLAGS        .EQU    $20
 _REG_WINDOW_X_0         .EQU    $30
 _REG_WINDOW_Y_0         .EQU    $31
@@ -353,6 +354,7 @@ PVDP_WRITE_CHAR:
         CALL    _CALC_COLOR
         LD      D, A
         CALL    _WRITE_CHAR
+        CALL    _ADVANCE_POS
         XOR     A
         RET
 
@@ -385,7 +387,6 @@ _WRITE_CHAR:
 
         LD      A, D
         CALL    LPVDP_WRITE
-        CALL    _ADVANCE_POS
 
         POP     HL
         POP     DE
@@ -465,6 +466,7 @@ PVDP_FILL:
         JR      _FILL_TEST
 _FILL_LOOP:
         CALL    _WRITE_CHAR
+        CALL    _ADVANCE_POS
         DEC     HL
 _FILL_TEST:
         LD      A, H
@@ -523,6 +525,7 @@ _COPY_1_CHAR:
         LD      D, A
         CALL    LPVDP_END_READ
         CALL    _WRITE_CHAR
+        CALL    _ADVANCE_POS
 
         POP     HL
         POP     DE
@@ -563,6 +566,8 @@ _BACKWARD_LOOP:
         DJNZ    _BACKWARD_LOOP
 
 _SCROLL_DONE:
+
+        CALL    _WAIT_NON_DISPLAY
 
         LD      A, (_SCROLL)    
         LD      D, A
@@ -607,6 +612,17 @@ _SCROLL_CLEAR:
         LD      (_POS), BC
         RET
 
+_WAIT_NON_DISPLAY:
+        PUSH    BC
+
+_WAIT_NON_DISPLAY_LOOP:        
+        LD      C, _REG_SCAN_LINE
+        CALL    _GET_REG
+        CP      $FF
+        JR      NZ, _WAIT_NON_DISPLAY_LOOP
+
+        POP     BC
+        RET
 
 
 LPVDP_INIT:
@@ -827,19 +843,53 @@ _KEYBOARD_READ_NOT_EMPTY:
         RET
 
 _SHOW_CURSOR:
+        LD      A, (_CURSOR_SHOWN)
+        AND     A
+        RET     NZ
+
         PUSH    BC
         PUSH    DE
+        PUSH    HL
+        
+        ; Read character under cursor
+        LD      HL, (_POS)
+#IF _NUM_DEVICES > 1
+        CALL    _SELECT_DEVICE
+#ENDIF
+        CALL    _SELECT_ADDRESS
+        CALL    LPVDP_READ
+        LD      (_CURSOR_CHAR), A
+        CALL    LPVDP_READ_NEXT
+        LD      (_CURSOR_COL), A
+        CALL    LPVDP_END_READ
 
+        ; Write cursor character
+        LD      DE, $F000
+        CALL    _WRITE_CHAR
+
+        LD      A, 1
+        LD      (_CURSOR_SHOWN), A
+        
+        POP     HL
         POP     DE
         POP     BC
         RET
 
 _HIDE_CURSOR:
-        PUSH    BC
+        LD      A, (_CURSOR_SHOWN)
+        AND     A
+        RET     Z
+        
         PUSH    DE
 
+        ; Restore character under cursor
+        LD      DE, (_CURSOR_CHAR)
+        CALL    _WRITE_CHAR
+
+        XOR     A
+        LD      (_CURSOR_SHOWN), A
+
         POP     DE
-        POP     BC
         RET
 
 _GET_MODIFIER_KEYS:
@@ -1123,6 +1173,9 @@ _POS                    .DW     0
 _SCROLL                 .DB     0
 _COLORS                 .DB     0
 _ATTRS                  .DB     0
+_CURSOR_SHOWN           .DB     0
+_CURSOR_CHAR            .DB     0
+_CURSOR_COL             .DB     0
 
 ; ASCII codes >=E0 are assigned as in RomWBW Architecture doc.
 _ASCII_LOWER:           .DB     "01234567"                                      ; row 0

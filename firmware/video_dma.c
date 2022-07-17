@@ -173,7 +173,7 @@ static void InitControlBlocks() {
   DMAControlBlock* control = g_dma_control_blocks;
 
   int irq_count = 0;
-  int irq_total = (vert->display_pixels >> g_vert_shift) + 1;
+  int irq_total = (vert->display_pixels >> g_vert_shift) + 2;
 
   int vert_reps = 1 << g_vert_shift;
   for (int y = 0; y < vert->back_porch_pixels; ++y) {
@@ -232,16 +232,14 @@ static void STRIPED_SECTION LineISR() {
 
   if (g_logical_y == -1) {
     ScanOutBeginDisplay();
-  } else {
+    ++g_logical_y;
+  } else if (g_logical_y < (g_timing.vert.display_pixels >> g_vert_shift)) {
     int logical_width = g_timing.horz.display_pixels >> g_horz_shift;
     ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, logical_width);
-
-    if (g_logical_y == (g_timing.vert.display_pixels >> g_vert_shift) - 1) {
-      ScanOutEndDisplay();
-    }
+    ++g_logical_y;
+  } else {
+    ScanOutEndDisplay();
   }
-  
-  ++g_logical_y;
 }
 
 void InitVideo(const VideoTiming* timing) {

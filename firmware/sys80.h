@@ -65,7 +65,7 @@ typedef struct {
       uint16_t kbd_dummy[16-KEYBOARD_ROWS];
       uint16_t mouse_x, mouse_y;     // $90, $91
       uint16_t mouse_buttons;        // $92
-      uint16_t pad2[14];
+      uint16_t pad2[13];
 
       // Video generator range $Ax, $Bx
       uint16_t current_y;            // $A0
