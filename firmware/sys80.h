@@ -37,6 +37,11 @@ enum {
 };
 
 typedef struct {
+  uint16_t window_x, window_y;
+  uint16_t pad[6];
+} PlaneRegs;
+
+typedef struct {
   // Read-write registers
   union {
     struct {
@@ -44,9 +49,10 @@ typedef struct {
       TrackedSys80Reg ay[2][16];
 
       // Video generator range $2x
-      MemAccessSys80Regs mem_access;  // $20
-      uint16_t video_flags;           // $28
-
+      uint16_t video_flags;           // $20
+      uint16_t pad[7];
+      MemAccessSys80Regs mem_access;  // $28
+      PlaneRegs plane_regs[2];        // $30
     };
     uint16_t rw_bytes[128];
   };

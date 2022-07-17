@@ -42,10 +42,6 @@
 #define NUM_SPRITE_PRIORITIES 4
 
 typedef struct {
-  uint8_t window_x, window_y;                     // 2 bytes
-} PlaneRegs;
-
-typedef struct {
   union {
     struct {
       uint16_t tile_idx   : 11;
@@ -66,16 +62,18 @@ static_assert(sizeof(Name) == 2);
 typedef struct {
   union {
     struct {
-      Name names[PLANE_WIDTH * PLANE_HEIGHT];         // 3840 bytes
-      PlaneRegs regs;                                 // 128 bytes
-      uint8_t pad[128 - sizeof(PlaneRegs)];
+      Name names[PLANE_WIDTH * PLANE_HEIGHT];         // 8192 bytes
       uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
+      uint8_t pad[128];                               // 128 bytes
       uint8_t chars[256 * CHAR_BYTES];
     };
     uint8_t bytes[65536];
     uint32_t tiles[65536 / sizeof(uint32_t)];
   };
 } Plane;
+
+static_assert(offsetof(Plane, palettes) == 0x2000);
+static_assert(offsetof(Plane, chars) == 0x2100);
 
 typedef struct {
   int16_t x: 10;
@@ -406,7 +404,7 @@ static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
 
 void STRIPED_SECTION ScanOutBeginDisplay() {
   for (int i = 0; i < NUM_PLANES; ++i) {
-    g_plane_regs[i] = g_planes[i].regs;
+    g_plane_regs[i] = g_sys80_regs.plane_regs[i];
 
     DoublePalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
   }

@@ -1,7 +1,7 @@
 .MODULE PVDP
 
 ; Configuration
-_WIDTH                  .EQU    40
+_WIDTH                  .EQU    80
 _HEIGHT                 .EQU    24
 TERMENABLE      	.SET	TRUE
 _KEY_BUF_SIZE           .EQU    16
@@ -11,9 +11,7 @@ _CURSOR_BLINK_PERIOD    .EQU    8
 ; Not configuration
 
 _ADDR_FONT              .EQU    $2100
-_ADDR_PALETTE           .EQU    $2080
-_ADDR_REGS              .EQU    $2000
-_ADDR_WINDOW_Y          .EQU    _ADDR_REGS + $01
+_ADDR_PALETTE           .EQU    $2000
 _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0
 _PORT_OP                .EQU    $B2
@@ -24,13 +22,17 @@ _OP_STEP_1              .EQU    $10
 _OP_STREAM              .EQU    $03
 _OP_READ                .EQU    $01
 
-_REG_ADDRESS            .EQU    $22
-_REG_DATA               .EQU    $24
-_REG_DEVICE             .EQU    $21
+_REG_ADDRESS            .EQU    $2A
+_REG_DATA               .EQU    $2C
+_REG_DEVICE             .EQU    $29
 _REG_KEY_ROWS           .EQU    $80
 _REG_LEDS               .EQU    $08
-_REG_OPERATION          .EQU    $20
-_REG_VIDEO_FLAGS        .EQU    $28
+_REG_OPERATION          .EQU    $28
+_REG_VIDEO_FLAGS        .EQU    $20
+_REG_WINDOW_X_0         .EQU    $30
+_REG_WINDOW_Y_0         .EQU    $31
+_REG_WINDOW_X_1         .EQU    $38
+_REG_WINDOW_Y_1         .EQU    $39
 
 #IF _WIDTH == 40
 _NUM_DEVICES            .EQU    1
@@ -178,22 +180,25 @@ _RESET_DEVICE:
 
         CALL    LPVDP_DEVICE
 
+        ; Clear names
         LD      DE, 0
         CALL    LPVDP_ADDRESS
         
-        ; Clear names  & regs, up to start address of regs
         LD      BC, _ADDR_PALETTE
         LD      E, 0
         CALL    LPVDP_WRITE_FILL
 
         ; Copy palette 0
+        LD      DE, _ADDR_PALETTE
+        CALL    LPVDP_ADDRESS
+
         LD      BC, 16
         LD      HL, _PALETTE
         CALL    LPVDP_WRITE_N
 
+        ; Copy font
         LD      DE, _ADDR_FONT
         CALL    LPVDP_ADDRESS
-
         CALL    _OUTPUT_FONT
 
         POP     HL
@@ -559,18 +564,12 @@ _BACKWARD_LOOP:
 
 _SCROLL_DONE:
 
-        LD      L, _NUM_DEVICES-1
-_SCROLL_DONE_LOOP:
-        LD      E, L
-        CALL    LPVDP_DEVICE
-        LD      DE, _ADDR_WINDOW_Y
-        CALL    LPVDP_ADDRESS
-        LD      A, (_SCROLL)
-        CALL    LPVDP_WRITE
-#IF _NUM_DEVICES > 1
-        DEC     L
-        JP      P, _SCROLL_DONE_LOOP
-#ENDIF
+        LD      A, (_SCROLL)    
+        LD      D, A
+        LD      C, _REG_WINDOW_Y_0
+        CALL    _SET_REG_D
+        LD      C, _REG_WINDOW_Y_1
+        CALL    _SET_REG_D
 
         POP     HL
         POP     DE
