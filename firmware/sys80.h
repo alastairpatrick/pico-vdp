@@ -48,7 +48,7 @@ typedef struct {
       // Audio / PIO range $0x, $1x
       TrackedSys80Reg ay[2][16];
 
-      // Video generator range $2x
+      // Video generator range $2x, $3x
       uint16_t video_flags;           // $20
       uint16_t pad[7];
       MemAccessSys80Regs mem_access;  // $28

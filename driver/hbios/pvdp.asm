@@ -22,6 +22,9 @@ _OP_STEP_1              .EQU    $10
 _OP_STREAM              .EQU    $03
 _OP_READ                .EQU    $01
 
+_REG_FIRST_INIT         .EQU    $20
+_REG_NUM_INIT           .EQU    $20
+
 _REG_ADDRESS            .EQU    $2A
 _REG_DATA               .EQU    $2C
 _REG_DEVICE             .EQU    $29
@@ -130,6 +133,15 @@ PVDP_RESET:
         PUSH    DE
         PUSH    HL
 
+        ; Initialize all regs in video range to zero
+        LD      B, _REG_NUM_INIT
+        LD      C, _REG_FIRST_INIT
+        LD      D, 0
+_INIT_REGS_LOOP:
+        CALL    _SET_REG_D
+        INC     C
+        DJNZ    _INIT_REGS_LOOP
+        
         ; Set video flags
         LD      C, _REG_VIDEO_FLAGS
 #IF (_WIDTH == 40) & (_HEIGHT == 24)
