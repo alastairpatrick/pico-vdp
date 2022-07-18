@@ -30,7 +30,7 @@ enum {
   PLANE_FLAG_PLANE_0_EN         = 0x01,
   PLANE_FLAG_PLANE_1_EN         = 0x02,
   PLANE_FLAG_TEXT_EN            = 0x04,
-  PLANE_FLAG_HIRES_EN           = 0x08,
+  PLANE_FLAG_PAIR_EN            = 0x08,
   PLANE_FLAG_TEXT_ROWS          = 0x10,
 };
 

@@ -10,7 +10,7 @@ _CURSOR_BLINK_PERIOD    .EQU    8
 
 ; Not configuration
 
-_ADDR_FONT              .EQU    $2100
+_ADDR_FONT              .EQU    $3000
 _ADDR_PALETTE           .EQU    $2000
 _PORT_RSEL              .EQU    $B1
 _PORT_RDAT              .EQU    $B0

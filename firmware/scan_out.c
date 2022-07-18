@@ -262,14 +262,30 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   
   ConfigureInterpolator(4, 0, 3);
 
-  if (plane_idx == 1) {
-    #define TRANSPARENT 1
-    #include "scan_tile_templ.h"
-    #undef TRANSPARENT
+  if (ctx->plane_flags & PLANE_FLAG_PAIR_EN) {
+    #define PAIR 1
+    if (plane_idx == 1) {
+      #define TRANSPARENT 1
+      #include "scan_tile_templ.h"
+      #undef TRANSPARENT
+    } else {
+      #define TRANSPARENT 0
+      #include "scan_tile_templ.h"
+      #undef TRANSPARENT
+    }
+    #undef PAIR
   } else {
-    #define TRANSPARENT 0
-    #include "scan_tile_templ.h"
-    #undef TRANSPARENT
+    #define PAIR 0
+    if (plane_idx == 1) {
+      #define TRANSPARENT 1
+      #include "scan_tile_templ.h"
+      #undef TRANSPARENT
+    } else {
+      #define TRANSPARENT 0
+      #include "scan_tile_templ.h"
+      #undef TRANSPARENT
+    }
+    #undef PAIR
   }
 }
 
@@ -422,7 +438,7 @@ static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
   if (plane_flags & PLANE_FLAG_TEXT_EN) {
     int text_height = plane_flags & PLANE_FLAG_TEXT_ROWS ? 10 : 8;
 
-    if (plane_flags & PLANE_FLAG_HIRES_EN) {
+    if (plane_flags & PLANE_FLAG_PAIR_EN) {
       ScanOutTextMode(ctx, core_num, true, text_height);
     } else if (plane_idx == 0) {
       ScanOutTextMode(ctx, core_num, false, text_height);
@@ -539,14 +555,14 @@ void STRIPED_SECTION ScanOutEndDisplay() {
 }
 
 void InitScanOut() {
-  g_sys80_regs.plane_flags = PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN;
+  g_sys80_regs.plane_flags = PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN | PLANE_FLAG_PAIR_EN;
   g_sys80_regs.sprite_flags = SPRITE_FLAG_EN | SPRITE_FLAG_PRI_SCROLL;
   g_sys80_regs.plane_regs[1].scroll_top = 16;
   g_sys80_regs.plane_regs[1].scroll_bottom = DISPLAY_HEIGHT - 16;
 
   for (int i = 0; i < count_of(g_planes->bytes); ++i) {
     g_planes[0].bytes[i] = rand();
-    g_planes[1].bytes[i] = 0;
+    g_planes[1].bytes[i] = rand();
   }
 
   for (int i = 0; i < 16; ++i) {

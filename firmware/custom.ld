@@ -52,7 +52,7 @@ SECTIONS
         "ERROR: Pico second stage bootloader must be 256 bytes in size")
 
     .ram_text : {
-        # *(.text.interp_*)
+        *(.text.interp_*)
         . = ALIGN(4);
     } > RAM AT> FLASH
 
