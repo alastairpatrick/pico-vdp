@@ -153,26 +153,6 @@ static int STRIPED_SECTION CalcSpriteHeight(int h) {
   return 8 << h;
 }
 
-typedef struct {
-  ParallelContext parallel;
-  uint8_t* dest;
-  uint8_t rgb;
-} ClearContext;
-
-static void STRIPED_SECTION ScanOutClear(const void* cc, int core_num) {
-  const ClearContext* ctx = cc;
-
-  uint32_t rgb = ctx->rgb;
-  rgb = rgb | (rgb << 8);
-  rgb = rgb | (rgb << 16);
-
-  uint8_t* dest = ctx->dest;
-
-  for (int x = core_num * 4; x < HIRES_DISPLAY_WIDTH; x += 4 * NUM_CORES) {
-    *((uint32_t*) (dest + x)) = rgb; 
-  }
-}
-
 static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, int mask_msb) {
   interp0->ctrl[0] = shift_bits << SIO_INTERP0_CTRL_LANE0_SHIFT_LSB |
     (31 << SIO_INTERP0_CTRL_LANE0_MASK_MSB_LSB);
@@ -202,6 +182,27 @@ static int STRIPED_SECTION LookupPalette(int color) {
   int rgb;
   asm ("LDRH %0, [%1, %1]" : "=l" (rgb) : "l" (color));
   return rgb;
+}
+
+
+typedef struct {
+  ParallelContext parallel;
+  uint8_t* dest;
+  uint8_t rgb;
+} ClearContext;
+
+static void STRIPED_SECTION ScanOutClear(const void* cc, int core_num) {
+  const ClearContext* ctx = cc;
+
+  uint32_t rgb = ctx->rgb;
+  rgb = rgb | (rgb << 8);
+  rgb = rgb | (rgb << 16);
+
+  uint8_t* dest = ctx->dest;
+
+  for (int x = core_num * 4; x < HIRES_DISPLAY_WIDTH; x += 4 * NUM_CORES) {
+    *((uint32_t*) (dest + x)) = rgb; 
+  }
 }
 
 
