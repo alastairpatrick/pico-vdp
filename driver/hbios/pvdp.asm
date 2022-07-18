@@ -34,9 +34,9 @@ _REG_OPERATION          .EQU    $28
 _REG_SCAN_LINE          .EQU    $A0
 _REG_VIDEO_FLAGS        .EQU    $20
 _REG_WINDOW_X_0         .EQU    $30
-_REG_WINDOW_Y_0         .EQU    $31
+_REG_WINDOW_Y_0         .EQU    $32
 _REG_WINDOW_X_1         .EQU    $38
-_REG_WINDOW_Y_1         .EQU    $39
+_REG_WINDOW_Y_1         .EQU    $3A
 
 #IF _WIDTH == 40
 _NUM_DEVICES            .EQU    1
@@ -141,7 +141,7 @@ _INIT_REGS_LOOP:
         CALL    _SET_REG_D
         INC     C
         DJNZ    _INIT_REGS_LOOP
-        
+
         ; Set video flags
         LD      C, _REG_VIDEO_FLAGS
 #IF (_WIDTH == 40) & (_HEIGHT == 24)

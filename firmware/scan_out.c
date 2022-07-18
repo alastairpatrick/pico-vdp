@@ -31,7 +31,8 @@
 #define PALETTE_SIZE 16
 #define NUM_PLANES 2
 
-#define TILE_SIZE 8
+#define TILE_SIZE_BITS 3
+#define TILE_SIZE (1 << TILE_SIZE_BITS)
 #define TILE_WORDS 8
 
 #define TEXT_WIDTH 8
@@ -70,6 +71,8 @@ typedef struct {
     uint8_t bytes[65536];
     uint32_t tiles[65536 / sizeof(uint32_t)];
   };
+
+  int window_x, window_y;
 } Plane;
 
 static_assert(offsetof(Plane, palettes) == 0x2000);
@@ -123,7 +126,6 @@ static_assert(sizeof(SpriteLayer) == 65536);
 typedef uint16_t Palette16[PALETTE_SIZE];
 
 static Plane g_planes[NUM_PLANES];
-static PlaneRegs g_plane_regs[NUM_PLANES];
 static Palette16 g_plane_palettes[NUM_PLANES][NUM_PALETTES];
 
 static SpriteLayer g_sprite_layer;
@@ -214,21 +216,22 @@ typedef struct {
 static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num) {
   int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
-  const PlaneRegs* regs = &g_plane_regs[plane_idx];
-  int y = ctx->y + regs->window_y;
+  int window_x = plane->window_x & (PLANE_WIDTH*TILE_SIZE-1);
+  int y = (ctx->y + plane->window_y) & (PLANE_HEIGHT*TILE_SIZE-1);
 
   int pattern_y = y & (TILE_SIZE-1);
   const uint32_t* base_tiles[4] = {  // indexed by name.tile.flip_y
     plane->tiles + pattern_y,
     plane->tiles + pattern_y,
-    plane->tiles + 7 - pattern_y,
-    plane->tiles + 7 - pattern_y,
+    plane->tiles + TILE_SIZE-1 - pattern_y,
+    plane->tiles + TILE_SIZE-1 - pattern_y,
   };
 
-  int source_idx = (y * TILE_SIZE) * PLANE_WIDTH + (regs->window_x * TILE_SIZE) + core_num;
+  const Name* base_names = plane->names + (y >> TILE_SIZE_BITS) * PLANE_WIDTH;
+  int begin_col = (window_x >> TILE_SIZE_BITS) + core_num;
 
   static_assert(TILE_SIZE * 2 == 16);
-  uint8_t* dest = ctx->dest - (regs->window_x & (TILE_SIZE-1)) + (core_num * TILE_SIZE * 2);
+  uint8_t* dest = ctx->dest - (window_x & (TILE_SIZE-1)) * 2 + (core_num * TILE_SIZE * 2);
 
   const Palette16* palette = g_plane_palettes[plane_idx];
   
@@ -245,17 +248,18 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   }
 }
 
-
 static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, bool hires, int text_height) {
   int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
-  const PlaneRegs* regs = &g_plane_regs[plane_idx];
+  int window_x = plane->window_x & (PLANE_WIDTH-1);
+  int window_y = plane->window_y & (PLANE_HEIGHT-1);
 
-  int y = ctx->y + regs->window_y * text_height;
+  int y = ctx->y + window_y * text_height;
   int32_t pattern_y = y % text_height;
   int char_y = y / text_height;
 
-  int source_idx = (char_y * PLANE_WIDTH) + regs->window_x + core_num;
+  const Name* source_base = plane->names + (char_y * PLANE_WIDTH);
+  int begin_col = window_x + core_num;
 
   const uint16_t* palette = g_plane_palettes[plane_idx][0];
 
@@ -403,8 +407,18 @@ static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
 }
 
 void STRIPED_SECTION ScanOutBeginDisplay() {
+  static int t;
+  ++t;
   for (int i = 0; i < NUM_PLANES; ++i) {
-    g_plane_regs[i] = g_sys80_regs.plane_regs[i];
+    /*if (t % 3 == 0) {
+      ++g_planes[i].window_x;
+    }
+    if (t % 5 == 0) {
+      ++g_planes[i].window_y;
+    }*/
+
+    g_planes[i].window_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].window_x);
+    g_planes[i].window_y = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].window_y);
 
     DoublePalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
   }

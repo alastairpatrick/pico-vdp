@@ -11,8 +11,7 @@
   }
 
   for (int c = 0; c < 41; c += NUM_CORES) {
-    Name name = GetName(plane, source_idx);
-    source_idx += NUM_CORES;
+    Name name = source_base[(begin_col + c) & (PLANE_WIDTH-1)];
 
     int bitmap = plane->chars[name.text.char_idx * CHAR_BYTES + pattern_y];
     if (!HIRES) {

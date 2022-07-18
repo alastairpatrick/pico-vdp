@@ -37,8 +37,8 @@ enum {
 };
 
 typedef struct {
-  uint16_t window_x, window_y;
-  uint16_t pad[6];
+  uint32_t window_x, window_y;
+  uint16_t pad[4];
 } PlaneRegs;
 
 typedef struct {

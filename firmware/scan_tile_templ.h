@@ -1,6 +1,5 @@
 for (int c = 0; c < 41; c += NUM_CORES) {
-  Name name = GetName(plane, source_idx);
-  source_idx += NUM_CORES;
+  Name name = base_names[(begin_col + c) & (PLANE_WIDTH-1)];
 
   int transparent_color = PreparePalette(palette[name.tile.palette_idx]);
 
