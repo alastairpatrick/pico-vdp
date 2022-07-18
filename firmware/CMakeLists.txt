@@ -25,6 +25,8 @@ add_executable(firmware
   video_mem.c
 )
 
+pico_set_linker_script(firmware ${CMAKE_CURRENT_LIST_DIR}/custom.ld)
+
 target_compile_definitions(firmware PRIVATE
   PICOVDP_OVERCLOCK=0
   PICOVDP_ENABLE_AUDIO=0
