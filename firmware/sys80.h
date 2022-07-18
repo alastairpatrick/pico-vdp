@@ -27,18 +27,24 @@ typedef struct {
 } MemAccessSys80Regs;
 
 enum {
-  VIDEO_FLAG_PLANE_0_EN   = 0x01,
-  VIDEO_FLAG_PLANE_1_EN   = 0x02,
-  VIDEO_FLAG_TEXT_EN      = 0x04,
-  VIDEO_FLAG_HIRES_EN     = 0x08,
-  VIDEO_FLAG_TEXT_ROWS    = 0x10,
-  VIDEO_FLAG_SPRITE_EN    = 0x40,
-  VIDEO_FLAG_SPRITE_PRI   = 0x80,
+  PLANE_FLAG_PLANE_0_EN         = 0x01,
+  PLANE_FLAG_PLANE_1_EN         = 0x02,
+  PLANE_FLAG_TEXT_EN            = 0x04,
+  PLANE_FLAG_HIRES_EN           = 0x08,
+  PLANE_FLAG_TEXT_ROWS          = 0x10,
+};
+
+enum {
+  SPRITE_FLAG_EN                = 0x01,
+  SPRITE_FLAG_PRI_TOP           = 0x02,
+  SPRITE_FLAG_PRI_SCROLL        = 0x04,
+  SPRITE_FLAG_PRI_BOTTOM        = 0x08,
 };
 
 typedef struct {
   uint32_t window_x, window_y;
-  uint16_t pad[4];
+  uint16_t scroll_top, scroll_bottom;
+  uint16_t pad[2];
 } PlaneRegs;
 
 typedef struct {
@@ -49,8 +55,9 @@ typedef struct {
       TrackedSys80Reg ay[2][16];
 
       // Video generator range $2x, $3x
-      uint16_t video_flags;           // $20
-      uint16_t pad[7];
+      uint16_t plane_flags;           // $20
+      uint16_t sprite_flags;          // $21
+      uint16_t pad[6];
       MemAccessSys80Regs mem_access;  // $28
       PlaneRegs plane_regs[2];        // $30
     };

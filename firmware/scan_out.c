@@ -1,8 +1,3 @@
-// -fno-strict-aliasing because the usual memcpy() approach to type punning does not work; the
-// compiler generates a call to memcpy() rather than inlining even when just copying a single uint16_t.
-#pragma GCC push_options
-#pragma GCC optimize("O3,no-strict-aliasing")
-
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -18,6 +13,10 @@
 #include "section.h"
 #include "sys80.h"
 #include "video_dma.h"
+
+// -fno-strict-aliasing because the usual memcpy() approach to type punning does not work; the
+// compiler generates a call to memcpy() rather than inlining even when just copying a single uint16_t.
+#pragma GCC optimize("no-strict-aliasing")
 
 #define AWFUL_MAGENTA 0xC7
 
@@ -73,6 +72,7 @@ typedef struct {
   };
 
   int window_x, window_y;
+  int scroll_top, scroll_bottom;
 } Plane;
 
 static_assert(offsetof(Plane, palettes) == 0x2000);
@@ -208,7 +208,8 @@ static int STRIPED_SECTION LookupPalette(int color) {
 typedef struct {
   ParallelContext parallel;
   int plane_idx;
-  int video_flags;
+  int plane_flags;
+  int sprite_flags;
   uint8_t* dest;
   int y;
 } PlaneContext;
@@ -216,8 +217,17 @@ typedef struct {
 static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_num) {
   int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
-  int window_x = plane->window_x & (PLANE_WIDTH*TILE_SIZE-1);
-  int y = (ctx->y + plane->window_y) & (PLANE_HEIGHT*TILE_SIZE-1);
+
+  int window_x = 0;
+  int y;
+  if (ctx->y < plane->scroll_top) {
+    y = ctx->y;
+  } else if (ctx->y >= plane->scroll_bottom) {
+    y = PLANE_HEIGHT*TILE_SIZE - DISPLAY_HEIGHT + ctx->y;
+  } else {
+    y = (ctx->y + plane->window_y) & (PLANE_HEIGHT*TILE_SIZE-1);
+    window_x = plane->window_x & (PLANE_WIDTH*TILE_SIZE-1);
+  }
 
   int pattern_y = y & (TILE_SIZE-1);
   const uint32_t* base_tiles[4] = {  // indexed by name.tile.flip_y
@@ -228,6 +238,7 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   };
 
   const Name* base_names = plane->names + (y >> TILE_SIZE_BITS) * PLANE_WIDTH;
+
   int begin_col = (window_x >> TILE_SIZE_BITS) + core_num;
 
   static_assert(TILE_SIZE * 2 == 16);
@@ -384,17 +395,20 @@ static void STRIPED_SECTION DoublePalettes(Palette16 dest[], uint8_t source[][PA
   }
 }
 
-#pragma GCC pop_options
+
+// ===================== UNOPTIMIZED CODE BELOW =====================
+#pragma GCC optimize("Og")
+
 
 static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
   const PlaneContext* ctx = cc;
   int plane_idx = ctx->plane_idx;
-  int video_flags = ctx->video_flags;
+  int plane_flags = ctx->plane_flags;
 
-  if (video_flags & VIDEO_FLAG_TEXT_EN) {
-    int text_height = video_flags & VIDEO_FLAG_TEXT_ROWS ? 10 : 8;
+  if (plane_flags & PLANE_FLAG_TEXT_EN) {
+    int text_height = plane_flags & PLANE_FLAG_TEXT_ROWS ? 10 : 8;
 
-    if (video_flags & VIDEO_FLAG_HIRES_EN) {
+    if (plane_flags & PLANE_FLAG_HIRES_EN) {
       ScanOutTextMode(ctx, core_num, true, text_height);
     } else if (plane_idx == 0) {
       ScanOutTextMode(ctx, core_num, false, text_height);
@@ -415,10 +429,15 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
     }
     if (t % 5 == 0) {
       ++g_planes[i].window_y;
-    }*/
+    }
+
+    g_planes[i].scroll_top = 16;
+    g_planes[i].scroll_bottom = 240-16;*/
 
     g_planes[i].window_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].window_x);
     g_planes[i].window_y = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].window_y);
+    g_planes[i].scroll_top = g_sys80_regs.plane_regs[i].scroll_top;
+    g_planes[i].scroll_bottom = g_sys80_regs.plane_regs[i].scroll_bottom;
 
     DoublePalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
   }
@@ -433,11 +452,11 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   }
 }
 
-void STRIPED_SECTION ScanOutPlaneParallel(uint8_t* dest, int y, int plane_idx, int video_flags) {
+void STRIPED_SECTION ScanOutPlaneParallel(uint8_t* dest, int y, int plane_idx, int plane_flags) {
   PlaneContext ctx = {
     .parallel.entry = ScanOutPlane,
     .plane_idx = plane_idx,
-    .video_flags = video_flags,
+    .plane_flags = plane_flags,
     .dest = dest,
     .y = y,
   };
@@ -460,10 +479,11 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
 
   UpdateActiveSprites(y);
 
-  int video_flags = g_sys80_regs.video_flags;
+  int plane_flags = g_sys80_regs.plane_flags;
+  int sprite_flags = g_sys80_regs.sprite_flags;
 
   // If either plane is disabled, initialize to solid black.
-  if ((video_flags & (VIDEO_FLAG_PLANE_0_EN | VIDEO_FLAG_PLANE_1_EN)) != (VIDEO_FLAG_PLANE_0_EN | VIDEO_FLAG_PLANE_1_EN)) {
+  if ((plane_flags & (PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN)) != (PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN)) {
     ClearContext clear_ctx = {
       .parallel.entry = ScanOutClear,
       .dest = dest,
@@ -473,18 +493,26 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
     Parallel(&clear_ctx);
   }
 
-  if (video_flags & VIDEO_FLAG_PLANE_0_EN) {
-    ScanOutPlaneParallel(dest, y, 0, video_flags);
+  if (plane_flags & PLANE_FLAG_PLANE_0_EN) {
+    ScanOutPlaneParallel(dest, y, 0, plane_flags);
   }
 
-  bool sprite_en = video_flags & VIDEO_FLAG_SPRITE_EN;
-  bool sprite_pri = video_flags & VIDEO_FLAG_SPRITE_PRI;
+  bool sprite_pri;
+  if (y < g_planes[1].scroll_top) {
+    sprite_pri = sprite_flags & SPRITE_FLAG_PRI_TOP;
+  } else if (y >= g_planes[1].scroll_bottom) {
+    sprite_pri = sprite_flags & SPRITE_FLAG_PRI_BOTTOM;
+  } else {
+    sprite_pri = sprite_flags & SPRITE_FLAG_PRI_SCROLL;
+  }
+
+  bool sprite_en = sprite_flags & SPRITE_FLAG_EN;
   if (sprite_en && !sprite_pri) {
     ScanOutSpritesParallel(dest, y);
   }
 
-  if (video_flags & VIDEO_FLAG_PLANE_1_EN) {
-    ScanOutPlaneParallel(dest, y, 1, video_flags);
+  if (plane_flags & PLANE_FLAG_PLANE_1_EN) {
+    ScanOutPlaneParallel(dest, y, 1, plane_flags);
   }
 
   if (sprite_en && sprite_pri) {
@@ -497,7 +525,8 @@ void STRIPED_SECTION ScanOutEndDisplay() {
 }
 
 void InitScanOut() {
-  g_sys80_regs.video_flags = VIDEO_FLAG_PLANE_0_EN | VIDEO_FLAG_PLANE_1_EN | VIDEO_FLAG_SPRITE_EN | VIDEO_FLAG_SPRITE_PRI;
+  g_sys80_regs.plane_flags = PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN;
+  g_sys80_regs.sprite_flags = SPRITE_FLAG_EN | SPRITE_FLAG_PRI_SCROLL;
 
   for (int i = 0; i < count_of(g_planes->chars); ++i) {
     g_planes[0].chars[i] = rand();
@@ -510,11 +539,10 @@ void InitScanOut() {
 
   for (int i = 0; i < count_of(g_planes->names); ++i) {
     for (int j = 0; j < 2; ++j) {
-      Name name = {0};
-      g_planes[1].names[i] = name;
-
-      name.tile.tile_idx = rand();
-      g_planes[0].names[i] = name;
+      Name name = {
+        .tile.tile_idx = rand(),
+      };
+      g_planes[j].names[i] = name;
     }
   }
 
