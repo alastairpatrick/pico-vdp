@@ -26,6 +26,10 @@
 
 #define PLANE_WIDTH 64
 #define PLANE_HEIGHT 64
+
+#define FIXED_WIDTH 40
+#define FIXED_HEIGHT 30
+
 #define NUM_PALETTES 8
 #define PALETTE_SIZE 16
 #define NUM_PLANES 2
@@ -62,10 +66,12 @@ static_assert(sizeof(Name) == 2);
 typedef struct {
   union {
     struct {
-      Name names[PLANE_WIDTH * PLANE_HEIGHT];         // 8192 bytes
+      Name scroll_names[PLANE_WIDTH * PLANE_HEIGHT];  // 8192 bytes
       uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
-      uint8_t pad[128];                               // 128 bytes
-      uint8_t chars[256 * CHAR_BYTES];
+      uint8_t pad1[128];                              // 128 bytes
+      Name fixed_names[FIXED_WIDTH * FIXED_HEIGHT];   // 2400 bytes
+      uint8_t pad2[1440];                             // 1440 bytes
+      uint8_t chars[256 * CHAR_BYTES];                // 4096 bytes
     };
     uint8_t bytes[65536];
     uint32_t tiles[65536 / sizeof(uint32_t)];
@@ -75,8 +81,10 @@ typedef struct {
   int scroll_top, scroll_bottom;
 } Plane;
 
+static_assert(offsetof(Plane, scroll_names) == 0x0000);
 static_assert(offsetof(Plane, palettes) == 0x2000);
-static_assert(offsetof(Plane, chars) == 0x2100);
+static_assert(offsetof(Plane, fixed_names) == 0x2100);
+static_assert(offsetof(Plane, chars) == 0x3000);
 
 typedef struct {
   int16_t x: 10;
@@ -165,7 +173,7 @@ static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, 
 }
 
 static STRIPED_SECTION Name GetName(const Plane* plane, int idx) {
-  return plane->names[idx & (count_of(plane->names) - 1)];
+  return plane->scroll_names[idx & (count_of(plane->scroll_names) - 1)];
 }
 
 static void STRIPED_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
@@ -221,13 +229,20 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
 
   int window_x = 0;
   int y;
-  if (ctx->y < plane->scroll_top) {
-    y = ctx->y;
-  } else if (ctx->y >= plane->scroll_bottom) {
-    y = PLANE_HEIGHT*TILE_SIZE - DISPLAY_HEIGHT + ctx->y;
-  } else {
+  const Name* base_names;
+
+  if (ctx->y >= plane->scroll_top && ctx->y < plane->scroll_bottom) {
     y = (ctx->y + plane->window_y) & (PLANE_HEIGHT*TILE_SIZE-1);
+    base_names = plane->scroll_names + (y >> TILE_SIZE_BITS) * PLANE_WIDTH;
     window_x = plane->window_x & (PLANE_WIDTH*TILE_SIZE-1);
+  } else {
+    if (ctx->y < plane->scroll_top) {
+      y = ctx->y;
+    } else {
+      y = ctx->y - plane->scroll_bottom;
+    }
+
+    base_names = plane->fixed_names + (y >> TILE_SIZE_BITS) * FIXED_WIDTH;
   }
 
   int pattern_y = y & (TILE_SIZE-1);
@@ -237,8 +252,6 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
     plane->tiles + TILE_SIZE-1 - pattern_y,
     plane->tiles + TILE_SIZE-1 - pattern_y,
   };
-
-  const Name* base_names = plane->names + (y >> TILE_SIZE_BITS) * PLANE_WIDTH;
 
   int begin_col = (window_x >> TILE_SIZE_BITS) + core_num;
 
@@ -270,7 +283,7 @@ static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_nu
   int32_t pattern_y = y % text_height;
   int char_y = y / text_height;
 
-  const Name* source_base = plane->names + (char_y * PLANE_WIDTH);
+  const Name* source_base = plane->scroll_names + (char_y * PLANE_WIDTH);
   int begin_col = window_x + core_num;
 
   const uint16_t* palette = g_plane_palettes[plane_idx][0];
@@ -528,22 +541,24 @@ void STRIPED_SECTION ScanOutEndDisplay() {
 void InitScanOut() {
   g_sys80_regs.plane_flags = PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN;
   g_sys80_regs.sprite_flags = SPRITE_FLAG_EN | SPRITE_FLAG_PRI_SCROLL;
+  g_sys80_regs.plane_regs[1].scroll_top = 16;
+  g_sys80_regs.plane_regs[1].scroll_bottom = DISPLAY_HEIGHT - 16;
 
-  for (int i = 0; i < count_of(g_planes->chars); ++i) {
-    g_planes[0].chars[i] = rand();
-    g_planes[1].chars[i] = 0;
+  for (int i = 0; i < count_of(g_planes->bytes); ++i) {
+    g_planes[0].bytes[i] = rand();
+    g_planes[1].bytes[i] = 0;
   }
 
   for (int i = 0; i < 16; ++i) {
     g_planes[0].palettes[0][i] = g_planes[1].palettes[0][i] = rand();
   }
 
-  for (int i = 0; i < count_of(g_planes->names); ++i) {
+  for (int i = 0; i < count_of(g_planes->scroll_names); ++i) {
     for (int j = 0; j < 2; ++j) {
       Name name = {
-        .tile.tile_idx = rand(),
+        .tile.tile_idx = i,
       };
-      g_planes[j].names[i] = name;
+      g_planes[j].scroll_names[i] = name;
     }
   }
 
