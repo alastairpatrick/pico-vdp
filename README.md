@@ -2,7 +2,7 @@
 
 In a nutshell, this project is a 39-pin RC2014 compatible multimedia board and associated software, providing video output, audio output, keyboard input, mouse input and [RomWBW](https://github.com/wwarthen/RomWBW) driver for Z80 retro computers. At the time of writing, it has been tested only with the [SC126 computer](https://smallcomputercentral.wordpress.com/sc126-z180-motherboard-rc2014/) but should work with others.
 
-A goal is to emulate hardware that could, in an alternate history, have been implemented for an 8-bit home micro circa 1985. The design does not represent the state-of-the-art for that period. For example, the Commodore Amiga 1000 computer, released in 1985, was much more capable. Rather, the design is intended to not only be possible in 1985 but cost-effective enough to put in an 8-bit home computer. For that reason, the VDP9938 graphics chip, used by MSX2 computers, is the main inspiration.
+A goal is to emulate hardware that could, in an alternate history, have been implemented for an 8-bit home micro circa 1985.
 
 Another goal is for the design to have era-reminiscent "quirks," which might be cleverly exploited to improve performance and/or capabilities. Some of these will intentionally remain undocumented, even if I take time to write documentation.
 
@@ -19,25 +19,16 @@ These are the features supported by the revision 1 hardware and associated softw
 - Graphics
   - VGA connector
   - 192KB VRAM
-    - 2x 32KB double-buffered Display RAM banks
-    - 128KB Blitter RAM
-  - Bitmap modes
-    - 256x192 pixels @ 2/4/16 colors
-    - 512x192 pixels @ 2/4 colors
-  - 1 hardware cursor
+  - Text modes
+    - 40x24 & 40x30 characters @ 16 colors
+    - 80x24 & 80x30 characters @ 16 colors
+  - Tile modes
+    - 2 layers of 40x30 tiles @ 16 colors per tile from 1 of 8 palettes
+  - Bitmap mode
+    - possible using tile mode with unique tile per position
+  - 256 hardware sprites
+    - max 16 per scan line
   - Hardware assisted horizontal & vertical scrolling
-  - VDP9938 inspired blitter coprocessor
-  - Amstrad PCW inspired "roller RAM"
-  - Commodore Amiga inspired "screens"
-  - Blitter command FIFO
-    - inspired by modern GPUs
-    - backed by blitter RAM
-    - facilitates parallelism between CPU and VDP
-  -  16 cycle accurate emulation
-  - RomWBW driver
-    - 42x24 text, 16 colors
-    - 64x24 text, 4 colors
-    - 80x24 text, 4 colors
 - Audio
   - PCB mount speaker
   - 2x emulated AY-891x programmable sound generators
@@ -54,11 +45,11 @@ These are the features supported by the revision 1 hardware and associated softw
     - 8-bit X, 8-bit Y, button state
 - Software
   - RP2040 firmware
-  - RomWBW HBIOS drivers
+  - RomWBW HBIOS VDA driver
   - RomWBW TUNE.COM plays AY-891x chip tunes
 - Microcontroller over-clocking
   - Over-clocking not needed if audio disabled
-  - 195MHz over-clock needed for video & audio
+  - 201.6MHz over-clock needed for both video & audio
 
 ## Contemplated Future Projects
 
@@ -76,7 +67,6 @@ These are the features supported by the revision 1 hardware and associated softw
 - Single board computer utilizing the Pico-VDP
 - FUZIX driver
 - Video display processor SDK
-  - for writing interactive bitmap graphics applications in assembly language and/or C
 - BASIC interpreter with bitmap graphics modes & commands
   - CP/M and/or FUZIX
 - Documentation
@@ -85,11 +75,12 @@ These are the features supported by the revision 1 hardware and associated softw
 - Integrate HBIOS and FUZIX drivers into respective source repositories
 - 256 color mode
 - Image viewer program
+- Paint program
 - Port a game
 
 ## AY-891x Accuracy
 
 Hello AY-3-8910 aficionado! Unfortunately the AY emulator only emulates every 16th cycle, i.e. the emulator is not cycle accurate. Another difference is, unlike the original chips, this uses pulse width modulation.
-Unlike some AY emulators, this one is quite constrained by the performance of the $1 microcontroller it runs on, which also emulates a video display processor in parallel.
+Unlike some AY emulators, this one is quite constrained by the performance of the $1 microcontroller it runs on.
 I tried some existing AY emulators but none were fast enough. That's why I wrote a new one, which trades off accuracy for performance.
 Making the emulation sound more like the original chips is desirable and hopefully it can be improved but making it sound exactly like the original chips is not a goal.
