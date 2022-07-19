@@ -51,11 +51,6 @@ SECTIONS
     ASSERT(__boot2_end__ - __boot2_start__ == 256,
         "ERROR: Pico second stage bootloader must be 256 bytes in size")
 
-    .ram_text : {
-        *(.text.interp_*)
-        . = ALIGN(4);
-    } > RAM AT> FLASH
-
     /* The second stage will always enter the image at the start of .text.
        The debugger will use the ELF entry point, which is the _entry_point
        symbol if present, otherwise defaults to start of .text.
