@@ -7,6 +7,8 @@
 #include "sys80.h"
 #include "video_dma.h"
 
+#define NUM_DISPLAY_LINE_ACCESSES 8
+
 enum {
   OP_MASK       = 0x03,
   OP_NOP        = 0x00,
@@ -22,18 +24,23 @@ enum {
 };
 
 static int g_last_y;
+static int g_remaining_accesses;
 
 void UpdateVideoMem() {
   if (IsSys80FifoEmpty()) {
     return;
   }
 
-  // Process up to one memory access per scanline and as they arrive during vertical non-display area.
-  /*int y = g_logical_y;
-  if (y < 240 && y == g_last_y) {
-    return;
+  // Limitted number of accesses on display lines. Unlimitted otherwise.
+  if (g_logical_y != g_last_y) {
+    g_remaining_accesses = NUM_DISPLAY_LINE_ACCESSES;
+    g_last_y = g_logical_y;
   }
-  g_last_y = y;*/
+  if (g_logical_y < DISPLAY_HEIGHT) {
+    if (g_remaining_accesses == 0)
+      return;
+    --g_remaining_accesses;
+  }
 
   // Pop the streamed data. One dummy value remains in the FIFO.
   int streamed = PopSys80Fifo();

@@ -1,7 +1,9 @@
 #ifndef SCAN_OUT_H
 #define SCAN_OUT_H
 
-#define TILE_BANK_SIZE 65536
+#define LORES_DISPLAY_WIDTH 320
+#define HIRES_DISPLAY_WIDTH (LORES_DISPLAY_WIDTH / 2)
+#define DISPLAY_HEIGHT 240
 
 int ReadVideoMemByte(int device, int address);
 void WriteVideoMemByte(int device, int address, int data);

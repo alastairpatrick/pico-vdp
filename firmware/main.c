@@ -29,7 +29,7 @@ int main() {
   adc_init();
   tusb_init();
 
-  InitParallel();
+  InitParallel(UpdateVideoMem);
   InitPerf();
 
   InitAudio();
@@ -45,7 +45,6 @@ int main() {
   InitSys80();
 
   for (;;) {
-    UpdateVideoMem();   // TODO: move to core 1
     UpdateKeyboard();
     UpdateSupplyMonitor();
     tuh_task();
