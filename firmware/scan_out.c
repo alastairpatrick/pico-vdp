@@ -87,11 +87,11 @@ static_assert(offsetof(Plane, fixed_names) == 0x2100);
 static_assert(offsetof(Plane, chars) == 0x3000);
 
 typedef struct {
+  uint16_t flip: 2;
   int16_t x: 10;
   
+  uint16_t z: 2;
   int16_t y: 10;
-  uint8_t z: 2;
-  uint8_t flip: 2;
 
   uint16_t image_addr: 10;
   uint8_t height: 2;  // 8 << height
@@ -159,6 +159,23 @@ void STRIPED_SECTION WriteVideoMemByte(int device, int address, int data) {
 
 static int STRIPED_SECTION CalcSpriteHeight(int h) {
   return 8 << h;
+}
+
+
+typedef enum {
+  PLANE_REGION_TOP,
+  PLANE_REGION_SCROLL,
+  PLANE_REGION_BOTTOM,
+} PlaneRegion;
+
+static PlaneRegion STRIPED_SECTION GetPlaneRegion(const Plane* plane, int y) {
+  if (y < plane->scroll_top) {
+    return PLANE_REGION_TOP;
+  } else if (y >= plane->scroll_bottom) {
+    return PLANE_REGION_BOTTOM;
+  } else {
+    return PLANE_REGION_SCROLL;
+  }
 }
 
 static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, int mask_msb) {
@@ -231,12 +248,13 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   int y;
   const Name* base_names;
 
-  if (ctx->y >= plane->scroll_top && ctx->y < plane->scroll_bottom) {
+  PlaneRegion region = GetPlaneRegion(plane, y);
+  if (region == PLANE_REGION_SCROLL) {
     y = (ctx->y + plane->window_y) & (PLANE_HEIGHT*TILE_SIZE-1);
     base_names = plane->scroll_names + (y >> TILE_SIZE_BITS) * PLANE_WIDTH;
     window_x = plane->window_x & (PLANE_WIDTH*TILE_SIZE-1);
   } else {
-    if (ctx->y < plane->scroll_top) {
+    if (region == PLANE_REGION_TOP) {
       y = ctx->y;
     } else {
       y = ctx->y - plane->scroll_bottom;
@@ -528,12 +546,17 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   }
 
   bool sprite_pri;
-  if (y < g_planes[1].scroll_top) {
-    sprite_pri = sprite_flags & SPRITE_FLAG_PRI_TOP;
-  } else if (y >= g_planes[1].scroll_bottom) {
-    sprite_pri = sprite_flags & SPRITE_FLAG_PRI_BOTTOM;
+  if (plane_flags & PLANE_FLAG_PAIR_EN) {
+    sprite_pri = true;
   } else {
-    sprite_pri = sprite_flags & SPRITE_FLAG_PRI_SCROLL;
+    PlaneRegion region = GetPlaneRegion(&g_planes[1], y);
+    if (region == PLANE_REGION_TOP) {
+      sprite_pri = sprite_flags & SPRITE_FLAG_PRI_TOP;
+    } else if (region == PLANE_REGION_BOTTOM) {
+      sprite_pri = sprite_flags & SPRITE_FLAG_PRI_BOTTOM;
+    } else {
+      sprite_pri = sprite_flags & SPRITE_FLAG_PRI_SCROLL;
+    }
   }
 
   bool sprite_en = sprite_flags & SPRITE_FLAG_EN;
