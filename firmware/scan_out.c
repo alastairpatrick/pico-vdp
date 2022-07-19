@@ -43,7 +43,8 @@
 
 #define SPRITE_WIDTH 16
 #define NUM_ACTIVE_SPRITES 16
-#define NUM_SPRITE_PRIORITIES 4
+#define SPRITE_PRIORITY_BITS 4
+#define NUM_SPRITE_PRIORITIES (1 << SPRITE_PRIORITY_BITS)
 
 typedef struct {
   union {
@@ -87,12 +88,12 @@ static_assert(offsetof(Plane, fixed_names) == 0x2100);
 static_assert(offsetof(Plane, chars) == 0x3000);
 
 typedef struct {
+  uint16_t z: SPRITE_PRIORITY_BITS;
+  int16_t y: 10;
+
   uint16_t flip: 2;
   int16_t x: 10;
   
-  uint16_t z: 2;
-  int16_t y: 10;
-
   uint16_t image_addr: 10;
   uint8_t height: 2;  // 8 << height
   bool transparent: 1;
@@ -101,7 +102,9 @@ typedef struct {
 
 static_assert(sizeof(Sprite) == 6);
 
-typedef struct {
+typedef struct ActiveSprite {
+  struct ActiveSprite* next;
+
   int16_t x;
   int16_t y;
 
@@ -111,11 +114,12 @@ typedef struct {
   uint16_t image_addr;
 
   uint8_t height;
-  int flip: 2;
+  uint8_t flip: 2;
   bool transparent: 1;
 } ActiveSprite;
 
 static ActiveSprite g_active_sprites[NUM_ACTIVE_SPRITES];
+static ActiveSprite *g_sprite_buckets[NUM_SPRITE_PRIORITIES];
 static int g_pending_sprite_idx;
 
 typedef struct {
@@ -352,11 +356,8 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
 
   ConfigureInterpolator(4 * NUM_CORES, 0, 3);
 
-  for (int z = NUM_SPRITE_PRIORITIES - 1; z >= 0; --z) {
-    for (int j = 0; j < count_of(g_active_sprites); ++j) {
-      const ActiveSprite* active = &g_active_sprites[j];
-      if (active->z != z)
-        continue;
+  for (int i = count_of(g_sprite_buckets) - 1; i >= 0; --i) {
+    for (const ActiveSprite* active = g_sprite_buckets[i]; active; active = active->next) {
       if (active->y > y)
         continue;
 
@@ -407,6 +408,10 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
 }
 
 static void STRIPED_SECTION UpdateActiveSprites(int y) {
+  for (int i = 0; i < count_of(g_sprite_buckets); ++i) {
+    g_sprite_buckets[i] = NULL;
+  }
+
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
     ActiveSprite *active = &g_active_sprites[i];
 
@@ -423,14 +428,17 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
         active->transparent = sprite->transparent;
 
         if (active->x <= -SPRITE_WIDTH || active->x >= LORES_DISPLAY_WIDTH) {
-          active->z = 0xFF;
+          active->y = DISPLAY_HEIGHT;
+          active->height = 0;
         }
       } else {
         active->y = DISPLAY_HEIGHT;
         active->height = 0;
-        active->z = 0xFF;
       }
     }
+
+    active->next = g_sprite_buckets[active->z];
+    g_sprite_buckets[active->z] = active;
   }
 }
 
