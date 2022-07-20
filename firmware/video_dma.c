@@ -234,8 +234,7 @@ static void STRIPED_SECTION LineISR() {
     ScanOutBeginDisplay();
     ++g_logical_y;
   } else if (g_logical_y < (g_timing.vert.display_pixels >> g_vert_shift)) {
-    int logical_width = g_timing.horz.display_pixels >> g_horz_shift;
-    ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y, logical_width);
+    ScanOutLine(g_display_lines[g_logical_y & 1] + DISPLAY_GUARD, g_logical_y);
     ++g_logical_y;
   } else {
     ScanOutEndDisplay();

@@ -404,6 +404,7 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
 }
 
 static void STRIPED_SECTION UpdateActiveSprites(int y) {
+  #pragma GCC unroll 16
   for (int i = 0; i < count_of(g_sprite_buckets); ++i) {
     g_sprite_buckets[i] = NULL;
   }
@@ -447,11 +448,6 @@ static void STRIPED_SECTION DoublePalettes(Palette16 dest[], uint8_t source[][PA
   }
 }
 
-
-// ===================== UNOPTIMIZED CODE BELOW =====================
-#pragma GCC optimize("Og")
-
-
 static void STRIPED_SECTION ScanOutPlane(const void* cc, int core_num) {
   const PlaneContext* ctx = cc;
   int plane_idx = ctx->plane_idx;
@@ -492,6 +488,8 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
     g_planes[i].scroll_bottom = g_sys80_regs.plane_regs[i].scroll_bottom;
 
     DoublePalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
+
+    UpdateActiveSprites(0);
   }
   
   DoublePalettes(g_sprite_palettes, g_sprite_layer.palettes, NUM_PALETTES);
@@ -526,10 +524,8 @@ void STRIPED_SECTION ScanOutSpritesParallel(uint8_t* dest, int y) {
   Parallel(&ctx);
 }
 
-void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
+void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y) {
   g_sys80_regs.current_y = y;
-
-  UpdateActiveSprites(y);
 
   int plane_flags = g_sys80_regs.plane_flags;
   int sprite_flags = g_sys80_regs.sprite_flags;
@@ -575,11 +571,16 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y, int width) {
   if (sprite_en && sprite_pri) {
     ScanOutSpritesParallel(dest, y);
   }
+
+  UpdateActiveSprites(y + 1);
 }
 
 void STRIPED_SECTION ScanOutEndDisplay() {
   g_sys80_regs.current_y = 0xFF;
 }
+
+// ===================== UNOPTIMIZED CODE BELOW =====================
+//#pragma GCC optimize("Og")
 
 void InitScanOut() {
   g_sys80_regs.plane_flags = PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN | PLANE_FLAG_PAIR_EN;
@@ -613,8 +614,8 @@ void InitScanOut() {
       Sprite* sprite = &g_sprite_layer.sprites[i];
       sprite->height = 1;
       sprite->z = 1;
-      sprite->x = x * 20 + y * 2 - 20;
-      sprite->y = y * 26 + x - 20;
+      sprite->x = x * 20;// + y * 2 - 20;
+      sprite->y = y * 26;// + x - 20;
       sprite->flip = 0b11;
       ++i;
     }
