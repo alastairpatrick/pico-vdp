@@ -241,6 +241,11 @@ static void STRIPED_SECTION LineISR() {
   }
 }
 
+void STRIPED_SECTION EnableHires(bool enable) {
+  int instruction = pio_encode_out(enable ? pio_pins : pio_null, 8);
+  PIO->instr_mem[video_offset_hires_out] = instruction;
+}
+
 void InitVideo(const VideoTiming* timing) {
   g_timing = *timing;
 
@@ -250,8 +255,9 @@ void InitVideo(const VideoTiming* timing) {
 
   set_sys_clock_pll(timing->vco_freq, timing->vco_div1, timing->vco_div2);
 
-  uint offset = pio_add_program(PIO, &video_program);
-  video_program_init(PIO, 0, offset, VIDEO_PINS, SYNC_PINS);
+  pio_add_program_at_offset(PIO, &video_program, 0);
+  video_program_init(PIO, 0, 0, VIDEO_PINS, SYNC_PINS);
+  EnableHires(true);
 
   g_dma_data_chan = dma_claim_unused_channel(true);
   g_dma_ctrl_chan = dma_claim_unused_channel(true);

@@ -2,13 +2,13 @@
   int color = interp0->pop[1];                            \
   if (PAIR) {                                             \
     if (TRANSPARENT) {                                    \
-      dest[i] = dest[i+1] = dest[i] | (color << 4);       \
+      dest[i] = dest[i] | (color << 4);                   \
     } else {                                              \
       dest[i] = color;                                    \
     }                                                     \
   } else {                                                \
-    if (!TRANSPARENT || color != transparent) {     \
-      WriteDoublePixel(dest + i, LookupPalette(color));   \
+    if (!TRANSPARENT || color != transparent) {           \
+      dest[i] = LookupPalette(color);                     \
     }                                                     \
   }                                                       \
 
@@ -18,7 +18,7 @@ for (int c = 0; c < 41; c += NUM_CORES) {
 
   int transparent = 0;
   if (!PAIR) {
-    transparent = interp0->base[1] = HalfPalette(palette[name.tile.palette_idx]);
+    transparent = PreparePalette(palettes[name.tile.palette_idx]);
   }
 
   int flip = name.tile.flip;

@@ -39,7 +39,7 @@
 
 #define SPRITE_WIDTH 16
 #define NUM_ACTIVE_SPRITES 16
-#define SPRITE_PRIORITY_BITS 4
+#define SPRITE_PRIORITY_BITS 6
 #define NUM_SPRITE_PRIORITIES (1 << SPRITE_PRIORITY_BITS)
 
 typedef struct {
@@ -106,12 +106,12 @@ typedef struct ActiveSprite {
 
   uint8_t z;
 
-  uint16_t image_addr;
-
   uint8_t height;
   uint8_t flip: 2;
 
-  int half_palette;
+  const uint32_t* src;
+
+  uint8_t* palette;
   int transparent;
 } ActiveSprite;
 
@@ -132,13 +132,13 @@ typedef struct {
 
 static_assert(sizeof(SpriteLayer) == 65536);
 
-typedef uint16_t Palette16[PALETTE_SIZE];
+typedef uint8_t Palette[PALETTE_SIZE];
 
 static Plane g_planes[NUM_PLANES];
-static Palette16 g_plane_palettes[NUM_PLANES][NUM_PALETTES];
+static Palette g_plane_palettes[NUM_PLANES][NUM_PALETTES];
 
 static SpriteLayer g_sprite_layer;
-static Palette16 g_sprite_palettes[NUM_PALETTES];
+static Palette g_sprite_palettes[NUM_PALETTES];
 
 int STRIPED_SECTION ReadVideoMemByte(int device, int address) {
   switch (device) {
@@ -194,20 +194,13 @@ static STRIPED_SECTION Name GetName(const Plane* plane, int idx) {
   return plane->scroll_names[idx & (count_of(plane->scroll_names) - 1)];
 }
 
-static void STRIPED_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
-  *(uint16_t*) dest = rgb;
-}
-
-static int STRIPED_SECTION HalfPalette(const uint16_t* palette) {
-  return ((int) palette) >> 1;
+static int STRIPED_SECTION PreparePalette(const uint8_t* palette) {
+  return interp0->base[1] = (uint32_t) palette;
 }
 
 static int STRIPED_SECTION LookupPalette(int color) {
-  int rgb;
-  asm ("LDRH %0, [%1, %1]" : "=l" (rgb) : "l" (color));
-  return rgb;
+  return *(uint8_t*) color;
 }
-
 
 typedef struct {
   ParallelContext parallel;
@@ -275,7 +268,7 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   static_assert(TILE_SIZE * 2 == 16);
   uint8_t* dest = ctx->dest - (window_x & (TILE_SIZE-1)) * 2 + (core_num * TILE_SIZE * 2);
 
-  const Palette16* palette = g_plane_palettes[plane_idx];
+  const Palette* palettes = g_plane_palettes[plane_idx];
   
   ConfigureInterpolator(4, 0, 3);
 
@@ -319,13 +312,15 @@ static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_nu
   const Name* source_base = plane->scroll_names + (char_y * PLANE_WIDTH);
   int begin_col = window_x + core_num;
 
-  const uint16_t* palette = g_plane_palettes[plane_idx][0];
+  const uint8_t* palette = g_plane_palettes[plane_idx][0];
 
   static_assert(TEXT_WIDTH * 2 == 16);
   uint8_t* dest = ctx->dest + (core_num * TEXT_WIDTH * 2);
   if (hires) {
     dest += plane_idx * TEXT_WIDTH;
   }
+
+  ConfigureInterpolator(1, 0, 0);
 
   if (hires) {
     #define HIRES 1
@@ -357,25 +352,24 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
         continue;
 
       int flip = active->flip;
-      const uint32_t* src = g_sprite_layer.images + 16 * active->image_addr;
+      const uint32_t* src = active->src;
       if (flip & 2) {
         src += (SPRITE_WIDTH/8) * (active->height - 1 - y - active->y);
       } else {
         src += (SPRITE_WIDTH/8) * (y - active->y);
       }
 
-      interp0->base[1] = active->half_palette;
-      int transparent = active->transparent;
+      int transparent = PreparePalette(active->palette);
 
-      uint16_t* dest = ((uint16_t*) ctx->dest) + active->x;
+      uint8_t* dest = ctx->dest + active->x * 2;
 
       if (flip & 1) {
-        int x = (SPRITE_WIDTH - 8) + ((active->x & (NUM_CORES-1)) ^ core_num);
-        for (; x >= 0; x -= 8) {
+        int x = ((SPRITE_WIDTH - 8) + ((active->x & (NUM_CORES-1)) ^ core_num)) * 2;
+        for (; x >= 0; x -= 16) {
           interp0->accum[0] = (*src++) >> (core_num * 4);
 
           #pragma GCC unroll 4
-          for (int i = 6; i >= 0; i -= 2) {
+          for (int i = 12; i >= 0; i -= 4) {
             int color = interp0->pop[1];
             if (color != transparent) {
               dest[x + i] = LookupPalette(color);
@@ -383,12 +377,12 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
           }
         }
       } else {
-        int x = (active->x & (NUM_CORES-1)) ^ core_num;
-        for (; x < SPRITE_WIDTH; x += 8) {
+        int x = ((active->x & (NUM_CORES-1)) ^ core_num) * 2;
+        for (; x < SPRITE_WIDTH*2; x += 16) {
           interp0->accum[0] = (*src++) >> (core_num * 4);
 
           #pragma GCC unroll 4
-          for (int i = 0; i < 8; i += 2) {
+          for (int i = 0; i < 16; i += 4) {
             int color = interp0->pop[1];
             if (color != transparent) {
               dest[x + i] = LookupPalette(color);
@@ -416,10 +410,10 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
         active->y = sprite->y;
         active->z = sprite->z;
         active->height = CalcSpriteHeight(sprite->height);
-        active->image_addr = sprite->image_addr;
+        active->src = g_sprite_layer.images + 16 * sprite->image_addr;
         active->flip = sprite->flip;
-        active->half_palette = HalfPalette(g_sprite_palettes[sprite->palette_idx]);
-        active->transparent = sprite->opaque ? -1 : active->half_palette;
+        active->palette = g_sprite_palettes[sprite->palette_idx];
+        active->transparent = sprite->opaque ? -1 : (int) active->palette;
 
         if (active->x <= -SPRITE_WIDTH || active->x >= LORES_DISPLAY_WIDTH) {
           active->y = DISPLAY_HEIGHT;
@@ -436,11 +430,10 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
   }
 }
 
-static void STRIPED_SECTION DoublePalettes(Palette16 dest[], uint8_t source[][PALETTE_SIZE], int num) {
+static void STRIPED_SECTION CopyPalettes(Palette dest[], uint8_t source[][PALETTE_SIZE], int num) {
   for (int i = 0; i < num; ++i) {
     for (int j = 0; j < PALETTE_SIZE; ++j) {
-      int rgb = source[i][j];
-      dest[i][j] = (rgb << 8) | rgb;
+      dest[i][j] = source[i][j];
     }
   }
 }
@@ -484,12 +477,12 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
     g_planes[i].scroll_top = g_sys80_regs.plane_regs[i].scroll_top;
     g_planes[i].scroll_bottom = g_sys80_regs.plane_regs[i].scroll_bottom;
 
-    DoublePalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
+    CopyPalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
 
     UpdateActiveSprites(0);
   }
   
-  DoublePalettes(g_sprite_palettes, g_sprite_layer.palettes, NUM_PALETTES);
+  CopyPalettes(g_sprite_palettes, g_sprite_layer.palettes, NUM_PALETTES);
 
   g_pending_sprite_idx = 0;
   for (int i = 0; i < NUM_ACTIVE_SPRITES; ++i) {
@@ -526,6 +519,9 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y) {
 
   int plane_flags = g_sys80_regs.plane_flags;
   int sprite_flags = g_sys80_regs.sprite_flags;
+
+  bool hires_video = (plane_flags & (PLANE_FLAG_PAIR_EN | PLANE_FLAG_TEXT_EN)) == (PLANE_FLAG_PAIR_EN | PLANE_FLAG_TEXT_EN);
+  EnableHires(hires_video);
 
   // If either plane is disabled, initialize to solid black.
   if ((plane_flags & (PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN)) != (PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN)) {

@@ -5,6 +5,10 @@
 
 PUBLIC handle_display:
   OUT PINS, 8
+  JMP X-- next
+next:
+PUBLIC hires_out:
+  OUT PINS, 8                 ; replaced with OUT NULL, 8 in lores modes
   JMP X-- handle_display
 
   MOV PINS, NULL

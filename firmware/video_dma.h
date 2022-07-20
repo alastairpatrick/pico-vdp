@@ -34,6 +34,7 @@ void InitVideo(const VideoTiming* timing);
 void SetVideoResolution(int horz_shift, int vert_shift);
 void InitVideoInterrupts();
 void StartVideo();
+void EnableHires(bool enable);
 
 extern volatile int g_logical_y;
 
