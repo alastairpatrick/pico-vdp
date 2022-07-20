@@ -88,11 +88,11 @@ typedef struct {
   int16_t y: 10;
 
   uint16_t flip: 2;
+  bool opaque: 1;
   int16_t x: 10;
   
   uint16_t image_addr: 10;
-  uint8_t height: 2;  // 8 << height
-  bool transparent: 1;
+  uint8_t height: 3;  // 8 * (height + 1)
   uint8_t palette_idx: 3;
 } Sprite;
 
@@ -105,13 +105,14 @@ typedef struct ActiveSprite {
   int16_t y;
 
   uint8_t z;
-  uint8_t palette_idx;
 
   uint16_t image_addr;
 
   uint8_t height;
   uint8_t flip: 2;
-  bool transparent: 1;
+
+  int half_palette;
+  int transparent;
 } ActiveSprite;
 
 static ActiveSprite g_active_sprites[NUM_ACTIVE_SPRITES];
@@ -158,7 +159,7 @@ void STRIPED_SECTION WriteVideoMemByte(int device, int address, int data) {
 }
 
 static int STRIPED_SECTION CalcSpriteHeight(int h) {
-  return 8 << h;
+  return 8 * (h + 1);
 }
 
 
@@ -197,10 +198,8 @@ static void STRIPED_SECTION WriteDoublePixel(uint8_t* dest, int rgb) {
   *(uint16_t*) dest = rgb;
 }
 
-static int STRIPED_SECTION PreparePalette(const uint16_t* palette) {
-  int half_palette = ((int) palette) >> 1;
-  interp0->base[1] = half_palette;
-  return half_palette;
+static int STRIPED_SECTION HalfPalette(const uint16_t* palette) {
+  return ((int) palette) >> 1;
 }
 
 static int STRIPED_SECTION LookupPalette(int color) {
@@ -365,10 +364,8 @@ static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
         src += (SPRITE_WIDTH/8) * (y - active->y);
       }
 
-      int transparent = PreparePalette(g_sprite_palettes[active->palette_idx]);
-      if (!active->transparent) {
-        transparent = -1;
-      }
+      interp0->base[1] = active->half_palette;
+      int transparent = active->transparent;
 
       uint16_t* dest = ((uint16_t*) ctx->dest) + active->x;
 
@@ -420,9 +417,9 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
         active->z = sprite->z;
         active->height = CalcSpriteHeight(sprite->height);
         active->image_addr = sprite->image_addr;
-        active->palette_idx = sprite->palette_idx;
         active->flip = sprite->flip;
-        active->transparent = sprite->transparent;
+        active->half_palette = HalfPalette(g_sprite_palettes[sprite->palette_idx]);
+        active->transparent = sprite->opaque ? -1 : active->half_palette;
 
         if (active->x <= -SPRITE_WIDTH || active->x >= LORES_DISPLAY_WIDTH) {
           active->y = DISPLAY_HEIGHT;

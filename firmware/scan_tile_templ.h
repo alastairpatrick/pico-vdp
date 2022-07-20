@@ -7,7 +7,7 @@
       dest[i] = color;                                    \
     }                                                     \
   } else {                                                \
-    if (!TRANSPARENT || color != transparent_color) {     \
+    if (!TRANSPARENT || color != transparent) {     \
       WriteDoublePixel(dest + i, LookupPalette(color));   \
     }                                                     \
   }                                                       \
@@ -16,9 +16,9 @@
 for (int c = 0; c < 41; c += NUM_CORES) {
   Name name = base_names[(begin_col + c) & (PLANE_WIDTH-1)];
 
-  int transparent_color = 0;
+  int transparent = 0;
   if (!PAIR) {
-    transparent_color = PreparePalette(palette[name.tile.palette_idx]);
+    transparent = interp0->base[1] = HalfPalette(palette[name.tile.palette_idx]);
   }
 
   int flip = name.tile.flip;
