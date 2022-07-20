@@ -39,7 +39,7 @@
 
 #define SPRITE_WIDTH 16
 #define NUM_ACTIVE_SPRITES 16
-#define SPRITE_PRIORITY_BITS 6
+#define SPRITE_PRIORITY_BITS 4
 #define NUM_SPRITE_PRIORITIES (1 << SPRITE_PRIORITY_BITS)
 
 typedef struct {
@@ -89,7 +89,7 @@ typedef struct {
 
   uint16_t flip: 2;
   bool opaque: 1;
-  int16_t x: 10;
+  int16_t x: 11;
   
   uint16_t image_addr: 10;
   uint8_t height: 3;  // 8 * (height + 1)
@@ -338,60 +338,27 @@ typedef struct {
   ParallelContext parallel;
   uint8_t* dest;
   int y;
+  int plane_flags;
 } SpriteContext;
 
 static void STRIPED_SECTION ScanOutSprites(const void* cc, int core_num) {
   const SpriteContext* ctx = cc;
   int y = ctx->y;
+  int plane_flags = ctx->plane_flags;
 
   ConfigureInterpolator(4 * NUM_CORES, 0, 3);
 
-  for (int i = count_of(g_sprite_buckets) - 1; i >= 0; --i) {
-    for (const ActiveSprite* active = g_sprite_buckets[i]; active; active = active->next) {
-      if (active->y > y)
-        continue;
-
-      int flip = active->flip;
-      const uint32_t* src = active->src;
-      if (flip & 2) {
-        src += (SPRITE_WIDTH/8) * (active->height - 1 - y - active->y);
-      } else {
-        src += (SPRITE_WIDTH/8) * (y - active->y);
-      }
-
-      int transparent = PreparePalette(active->palette);
-
-      uint8_t* dest = ctx->dest + active->x * 2;
-
-      if (flip & 1) {
-        int x = ((SPRITE_WIDTH - 8) + ((active->x & (NUM_CORES-1)) ^ core_num)) * 2;
-        for (; x >= 0; x -= 16) {
-          interp0->accum[0] = (*src++) >> (core_num * 4);
-
-          #pragma GCC unroll 4
-          for (int i = 12; i >= 0; i -= 4) {
-            int color = interp0->pop[1];
-            if (color != transparent) {
-              dest[x + i] = LookupPalette(color);
-            }
-          }
-        }
-      } else {
-        int x = ((active->x & (NUM_CORES-1)) ^ core_num) * 2;
-        for (; x < SPRITE_WIDTH*2; x += 16) {
-          interp0->accum[0] = (*src++) >> (core_num * 4);
-
-          #pragma GCC unroll 4
-          for (int i = 0; i < 16; i += 4) {
-            int color = interp0->pop[1];
-            if (color != transparent) {
-              dest[x + i] = LookupPalette(color);
-            }
-          }
-        }
-      }
-    }
+  if ((plane_flags & (PLANE_FLAG_PAIR_EN | PLANE_FLAG_TEXT_EN)) == (PLANE_FLAG_PAIR_EN | PLANE_FLAG_TEXT_EN)) {
+    #define HIRES 1
+    #include "scan_sprite_templ.h"
+    #undef HIRES
+  } else {
+    #define HIRES 0
+    #include "scan_sprite_templ.h"
+    #undef HIRES
   }
+
+
 }
 
 static void STRIPED_SECTION UpdateActiveSprites(int y) {
@@ -504,9 +471,10 @@ void STRIPED_SECTION ScanOutPlaneParallel(uint8_t* dest, int y, int plane_idx, i
   Parallel(&ctx);
 }
 
-void STRIPED_SECTION ScanOutSpritesParallel(uint8_t* dest, int y) {
+void STRIPED_SECTION ScanOutSpritesParallel(uint8_t* dest, int y, int plane_flags) {
   SpriteContext ctx = {
     .parallel.entry = ScanOutSprites,
+    .plane_flags = plane_flags,
     .dest = dest,
     .y = y,
   };
@@ -554,7 +522,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y) {
 
   bool sprite_en = sprite_flags & SPRITE_FLAG_EN;
   if (sprite_en && !sprite_pri) {
-    ScanOutSpritesParallel(dest, y);
+    ScanOutSpritesParallel(dest, y, plane_flags);
   }
 
   if (plane_flags & PLANE_FLAG_PLANE_1_EN) {
@@ -562,7 +530,7 @@ void STRIPED_SECTION ScanOutLine(uint8_t* dest, int y) {
   }
 
   if (sprite_en && sprite_pri) {
-    ScanOutSpritesParallel(dest, y);
+    ScanOutSpritesParallel(dest, y, plane_flags);
   }
 
   UpdateActiveSprites(y + 1);
