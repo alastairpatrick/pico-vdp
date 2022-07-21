@@ -74,8 +74,8 @@ typedef struct {
     uint32_t tiles[65536 / sizeof(uint32_t)];
   };
 
-  int window_x, window_y;
-  int scroll_top, scroll_bottom;
+  int mid_x, mid_y;
+  int mid_top, mid_bottom;
 } Plane;
 
 static_assert(offsetof(Plane, scroll_names) == 0x0000);
@@ -165,17 +165,17 @@ static int STRIPED_SECTION CalcSpriteHeight(int h) {
 
 typedef enum {
   PLANE_REGION_TOP,
-  PLANE_REGION_SCROLL,
+  PLANE_REGION_MID,
   PLANE_REGION_BOTTOM,
 } PlaneRegion;
 
 static PlaneRegion STRIPED_SECTION GetPlaneRegion(const Plane* plane, int y) {
-  if (y < plane->scroll_top) {
+  if (y < plane->mid_top) {
     return PLANE_REGION_TOP;
-  } else if (y >= plane->scroll_bottom) {
+  } else if (y >= plane->mid_bottom) {
     return PLANE_REGION_BOTTOM;
   } else {
-    return PLANE_REGION_SCROLL;
+    return PLANE_REGION_MID;
   }
 }
 
@@ -236,20 +236,20 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
   int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
 
-  int window_x = 0;
+  int mid_x = 0;
   int y;
   const Name* base_names;
 
   PlaneRegion region = GetPlaneRegion(plane, y);
-  if (region == PLANE_REGION_SCROLL) {
-    y = (ctx->y + plane->window_y) & (PLANE_HEIGHT*TILE_SIZE-1);
+  if (region == PLANE_REGION_MID) {
+    y = (ctx->y + plane->mid_y) & (PLANE_HEIGHT*TILE_SIZE-1);
     base_names = plane->scroll_names + (y >> TILE_SIZE_BITS) * PLANE_WIDTH;
-    window_x = plane->window_x & (PLANE_WIDTH*TILE_SIZE-1);
+    mid_x = plane->mid_x & (PLANE_WIDTH*TILE_SIZE-1);
   } else {
     if (region == PLANE_REGION_TOP) {
       y = ctx->y;
     } else {
-      y = ctx->y - plane->scroll_bottom;
+      y = ctx->y - plane->mid_bottom;
     }
 
     base_names = plane->fixed_names + (y >> TILE_SIZE_BITS) * FIXED_WIDTH;
@@ -263,10 +263,10 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
     plane->tiles + TILE_SIZE-1 - pattern_y,
   };
 
-  int begin_col = (window_x >> TILE_SIZE_BITS) + core_num;
+  int begin_col = (mid_x >> TILE_SIZE_BITS) + core_num;
 
   static_assert(TILE_SIZE * 2 == 16);
-  uint8_t* dest = ctx->dest - (window_x & (TILE_SIZE-1)) * 2 + (core_num * TILE_SIZE * 2);
+  uint8_t* dest = ctx->dest - (mid_x & (TILE_SIZE-1)) * 2 + (core_num * TILE_SIZE * 2);
 
   const Palette* palettes = g_plane_palettes[plane_idx];
   
@@ -302,15 +302,15 @@ static void STRIPED_SECTION ScanOutTileMode(const PlaneContext* ctx, int core_nu
 static void STRIPED_SECTION ScanOutTextMode(const PlaneContext* ctx, int core_num, bool hires, int text_height) {
   int plane_idx = ctx->plane_idx;
   const Plane* plane = &g_planes[plane_idx];
-  int window_x = plane->window_x & (PLANE_WIDTH-1);
-  int window_y = plane->window_y & (PLANE_HEIGHT-1);
+  int mid_x = plane->mid_x & (PLANE_WIDTH-1);
+  int mid_y = plane->mid_y & (PLANE_HEIGHT-1);
 
-  int y = ctx->y + window_y * text_height;
+  int y = ctx->y + mid_y * text_height;
   int32_t pattern_y = y % text_height;
   int char_y = y / text_height;
 
   const Name* source_base = plane->scroll_names + (char_y * PLANE_WIDTH);
-  int begin_col = window_x + core_num;
+  int begin_col = mid_x + core_num;
 
   const uint8_t* palette = g_plane_palettes[plane_idx][0];
 
@@ -430,19 +430,19 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   ++t;
   for (int i = 0; i < NUM_PLANES; ++i) {
     /*if (t % 3 == 0) {
-      ++g_planes[i].window_x;
+      ++g_planes[i].mid_x;
     }
     if (t % 5 == 0) {
-      ++g_planes[i].window_y;
+      ++g_planes[i].mid_y;
     }
 
-    g_planes[i].scroll_top = 16;
-    g_planes[i].scroll_bottom = 240-16;*/
+    g_planes[i].mid_top = 16;
+    g_planes[i].mid_bottom = 240-16;*/
 
-    g_planes[i].window_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].window_x);
-    g_planes[i].window_y = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].window_y);
-    g_planes[i].scroll_top = g_sys80_regs.plane_regs[i].scroll_top;
-    g_planes[i].scroll_bottom = g_sys80_regs.plane_regs[i].scroll_bottom;
+    g_planes[i].mid_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].mid_x);
+    g_planes[i].mid_y = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].mid_y);
+    g_planes[i].mid_top = g_sys80_regs.plane_regs[i].mid_top;
+    g_planes[i].mid_bottom = g_sys80_regs.plane_regs[i].mid_bottom;
 
     CopyPalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
 
@@ -546,8 +546,8 @@ void STRIPED_SECTION ScanOutEndDisplay() {
 void InitScanOut() {
   g_sys80_regs.plane_flags = PLANE_FLAG_PLANE_0_EN | PLANE_FLAG_PLANE_1_EN | PLANE_FLAG_PAIR_EN;
   g_sys80_regs.sprite_flags = SPRITE_FLAG_EN | SPRITE_FLAG_PRI_SCROLL;
-  g_sys80_regs.plane_regs[1].scroll_top = 16;
-  g_sys80_regs.plane_regs[1].scroll_bottom = DISPLAY_HEIGHT - 16;
+  g_sys80_regs.plane_regs[1].mid_top = 16;
+  g_sys80_regs.plane_regs[1].mid_bottom = DISPLAY_HEIGHT - 16;
 
   for (int i = 0; i < count_of(g_planes->bytes); ++i) {
     g_planes[0].bytes[i] = rand();

@@ -42,8 +42,8 @@ enum {
 };
 
 typedef struct {
-  uint32_t window_x, window_y;
-  uint16_t scroll_top, scroll_bottom;
+  uint32_t mid_x, mid_y;
+  uint16_t mid_top, mid_bottom;
   uint16_t pad[2];
 } PlaneRegs;
 
