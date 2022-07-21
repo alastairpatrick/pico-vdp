@@ -26,6 +26,8 @@ typedef struct {
   uint16_t pad[3];
 } MemAccessSys80Regs;
 
+static_assert(sizeof(MemAccessSys80Regs) == 16);
+
 enum {
   PLANE_FLAG_PLANE_0_EN         = 0x01,
   PLANE_FLAG_PLANE_1_EN         = 0x02,
@@ -42,10 +44,13 @@ enum {
 };
 
 typedef struct {
-  uint32_t mid_x, mid_y;
   uint16_t mid_top, mid_bottom;
-  uint16_t pad[2];
+  uint32_t mid_x, mid_y;
+  uint32_t top_x, bottom_x;
+  uint16_t pad[6];
 } PlaneRegs;
+
+static_assert(sizeof(PlaneRegs) == 32);
 
 typedef struct {
   // Read-write registers

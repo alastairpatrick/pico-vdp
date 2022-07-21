@@ -14,7 +14,7 @@
 
 
 for (int c = 0; c < 41; c += NUM_CORES) {
-  Name name = base_names[(begin_col + c) & (PLANE_WIDTH-1)];
+  Name name = names[((row * PLANE_WIDTH) + ((begin_col + c) & (PLANE_WIDTH-1))) & (PLANE_WIDTH * PLANE_HEIGHT - 1)];
 
   int transparent = 0;
   if (!PAIR) {
