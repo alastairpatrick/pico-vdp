@@ -20,6 +20,8 @@
 
 #define AWFUL_MAGENTA 0xC7
 
+#define PAGE_SIZE 128
+
 #define PLANE_WIDTH 64
 #define PLANE_HEIGHT 64
 #define FIXED_HEIGHT 30
@@ -58,28 +60,23 @@ typedef struct {
 
 static_assert(sizeof(Name) == 2);
 
+typedef uint8_t Palette[16];
+
 typedef struct {
   union {
-    struct {
-      Name mid_names[PLANE_WIDTH * PLANE_HEIGHT];  // 8192 bytes
-      uint8_t palettes[NUM_PALETTES][PALETTE_SIZE];   // 128 bytes
-      uint8_t pad1[128];                              // 128 bytes
-      Name edge_names[PLANE_WIDTH * FIXED_HEIGHT];   // 3840 bytes
-      uint8_t chars[256 * CHAR_BYTES];                // 4096 bytes
-    };
     uint8_t bytes[65536];
     uint32_t tiles[65536 / sizeof(uint32_t)];
   };
+
+  const Name* mid_names;
+  const Name* edge_names;
+  const Palette* palettes;
+  const uint8_t* chars;
 
   int mid_top, mid_bottom;
   int mid_x, mid_y;
   int top_x, bottom_x;
 } Plane;
-
-static_assert(offsetof(Plane, mid_names) == 0x0000);
-static_assert(offsetof(Plane, palettes) == 0x2000);
-static_assert(offsetof(Plane, edge_names) == 0x2100);
-static_assert(offsetof(Plane, chars) == 0x3000);
 
 typedef struct {
   uint16_t z: SPRITE_PRIORITY_BITS;
@@ -186,10 +183,6 @@ static void STRIPED_SECTION ConfigureInterpolator(int shift_bits, int mask_lsb, 
     (mask_msb << SIO_INTERP0_CTRL_LANE0_MASK_MSB_LSB);
   
   interp0->base[1] = 0;
-}
-
-static STRIPED_SECTION Name GetName(const Plane* plane, int idx) {
-  return plane->mid_names[idx & (count_of(plane->mid_names) - 1)];
 }
 
 static int STRIPED_SECTION PreparePalette(const uint8_t* palette) {
@@ -399,7 +392,7 @@ static void STRIPED_SECTION UpdateActiveSprites(int y) {
   }
 }
 
-static void STRIPED_SECTION CopyPalettes(Palette dest[], uint8_t source[][PALETTE_SIZE], int num) {
+static void STRIPED_SECTION CopyPalettes(Palette* dest, const Palette* source, int num) {
   for (int i = 0; i < num; ++i) {
     for (int j = 0; j < PALETTE_SIZE; ++j) {
       dest[i][j] = source[i][j];
@@ -431,26 +424,34 @@ void STRIPED_SECTION ScanOutBeginDisplay() {
   static int t;
   ++t;
   for (int i = 0; i < NUM_PLANES; ++i) {
+    Plane* plane = &g_planes[i];
+    volatile PlaneRegs* regs = &g_sys80_regs.plane_regs[i];
+    
     /*if (t % 3 == 0) {
-      ++g_planes[i].mid_x;
+      ++plane->mid_x;
     }
     if (t % 5 == 0) {
-      ++g_planes[i].mid_y;
-      --g_planes[i].top_x;
-      --g_planes[i].bottom_x;
+      ++plane->mid_y;
+      --plane->top_x;
+      --plane->bottom_x;
     }
 
-    g_planes[i].mid_top = 16;
-    g_planes[i].mid_bottom = 240-16;*/
+    plane->mid_top = 16;
+    plane->mid_bottom = 240-16;*/
 
-    g_planes[i].mid_top = g_sys80_regs.plane_regs[i].mid_top;
-    g_planes[i].mid_bottom = g_sys80_regs.plane_regs[i].mid_bottom;
-    g_planes[i].mid_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].mid_x);
-    g_planes[i].mid_y = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].mid_y);
-    g_planes[i].top_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].top_x);
-    g_planes[i].bottom_x = Unswizzle16BitSys80Reg(g_sys80_regs.plane_regs[i].bottom_x);
+    plane->mid_names = (const Name*) (plane->bytes + PAGE_SIZE * regs->mid_page);
+    plane->edge_names = (const Name*) (plane->bytes + PAGE_SIZE * regs->edge_page);
+    plane->palettes = (const Palette*) (plane->bytes + PAGE_SIZE * regs->palette_page);
+    plane->chars = plane->bytes + PAGE_SIZE * regs->chars_page;
 
-    CopyPalettes(g_plane_palettes[i], g_planes[i].palettes, NUM_PALETTES);
+    plane->mid_top = g_sys80_regs.plane_regs[i].mid_top;
+    plane->mid_bottom = g_sys80_regs.plane_regs[i].mid_bottom;
+    plane->mid_x = Unswizzle16BitSys80Reg(regs->mid_x);
+    plane->mid_y = Unswizzle16BitSys80Reg(regs->mid_y);
+    plane->top_x = Unswizzle16BitSys80Reg(regs->top_x);
+    plane->bottom_x = Unswizzle16BitSys80Reg(regs->bottom_x);
+
+    CopyPalettes(g_plane_palettes[i], plane->palettes, NUM_PALETTES);
 
     UpdateActiveSprites(0);
   }
@@ -558,15 +559,6 @@ void InitScanOut() {
   for (int i = 0; i < count_of(g_planes->bytes); ++i) {
     g_planes[0].bytes[i] = rand();
     g_planes[1].bytes[i] = rand();
-  }
-
-  for (int i = 0; i < count_of(g_planes->mid_names); ++i) {
-    for (int j = 0; j < 2; ++j) {
-      Name name = {
-        .tile.tile_idx = i,
-      };
-      g_planes[j].mid_names[i] = name;
-    }
   }
 
   memset(g_sprite_layer.bytes, 0x11, sizeof(g_sprite_layer.bytes));

@@ -44,10 +44,15 @@ enum {
 };
 
 typedef struct {
+  uint16_t mid_page;
+  uint16_t edge_page;
+  uint16_t palette_page;
+  uint16_t chars_page;
+  uint16_t pad[2];
+
   uint16_t mid_top, mid_bottom;
   uint32_t mid_x, mid_y;
   uint32_t top_x, bottom_x;
-  uint16_t pad[6];
 } PlaneRegs;
 
 static_assert(sizeof(PlaneRegs) == 32);

@@ -23,20 +23,24 @@ _OP_STREAM              .EQU    $03
 _OP_READ                .EQU    $01
 
 _REG_FIRST_INIT         .EQU    $20
-_REG_NUM_INIT           .EQU    $20
+_REG_NUM_INIT           .EQU    $30
 
 _REG_ADDRESS            .EQU    $2A
 _REG_DATA               .EQU    $2C
 _REG_DEVICE             .EQU    $29
+_REG_FONT_PAGE_0        .EQU    $33
+_REG_FONT_PAGE_1        .EQU    $43
 _REG_KEY_ROWS           .EQU    $80
 _REG_LEDS               .EQU    $08
 _REG_OPERATION          .EQU    $28
+_REG_PALETTE_PAGE_0     .EQU    $32
+_REG_PALETTE_PAGE_1     .EQU    $42
 _REG_SCAN_LINE          .EQU    $A0
 _REG_VIDEO_FLAGS        .EQU    $20
-_REG_WINDOW_X_0         .EQU    $30
-_REG_WINDOW_Y_0         .EQU    $32
-_REG_WINDOW_X_1         .EQU    $38
-_REG_WINDOW_Y_1         .EQU    $3A
+_REG_WINDOW_X_0         .EQU    $38
+_REG_WINDOW_Y_0         .EQU    $3A
+_REG_WINDOW_X_1         .EQU    $48
+_REG_WINDOW_Y_1         .EQU    $4A
 
 #IF _WIDTH == 40
 _NUM_DEVICES            .EQU    1
@@ -156,6 +160,18 @@ _INIT_REGS_LOOP:
 #IF (_WIDTH == 80) & (_HEIGHT == 30)
         LD      D, $0F
 #ENDIF
+        CALL _SET_REG_D
+
+        LD      D, _ADDR_FONT >> 7
+        LD      C, _REG_FONT_PAGE_0
+        CALL _SET_REG_D
+        LD      C, _REG_FONT_PAGE_1
+        CALL _SET_REG_D
+
+        LD      D, _ADDR_PALETTE >> 7
+        LD      C, _REG_PALETTE_PAGE_0
+        CALL _SET_REG_D
+        LD      C, _REG_PALETTE_PAGE_1
         CALL _SET_REG_D
 
         CALL    LPVDP_INIT
